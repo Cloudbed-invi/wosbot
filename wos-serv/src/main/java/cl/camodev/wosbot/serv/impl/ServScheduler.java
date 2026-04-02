@@ -87,6 +87,8 @@ public class ServScheduler {
 				saveEmulatorPath(EnumConfigurationKey.LDPLAYER_PATH_STRING.name(), value);
 			} else if (key.equals(EnumConfigurationKey.MEMU_PATH_STRING.name())) {
 				saveEmulatorPath(EnumConfigurationKey.MEMU_PATH_STRING.name(), value);
+			} else if (key.equals(EnumConfigurationKey.BLUESTACKS_PATH_STRING.name())) {
+				saveEmulatorPath(EnumConfigurationKey.BLUESTACKS_PATH_STRING.name(), value);
 			}
 		});
 		List<DTOProfiles> profiles = ServProfiles.getServices().getProfiles();

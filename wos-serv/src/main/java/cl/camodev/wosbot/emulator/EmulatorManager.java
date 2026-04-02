@@ -19,6 +19,7 @@ import cl.camodev.utiles.UtilOCR;
 import cl.camodev.wosbot.console.enumerable.EnumConfigurationKey;
 import cl.camodev.wosbot.console.enumerable.EnumTemplates;
 import cl.camodev.wosbot.console.enumerable.GameVersion;
+import cl.camodev.wosbot.emulator.impl.BlueStacksEmulator;
 import cl.camodev.wosbot.emulator.impl.LDPlayerEmulator;
 import cl.camodev.wosbot.emulator.impl.MEmuEmulator;
 import cl.camodev.wosbot.emulator.impl.MuMuEmulator;
@@ -102,6 +103,9 @@ public class EmulatorManager {
                     break;
                 case LDPLAYER:
                     this.emulator = new LDPlayerEmulator(consolePath);
+                    break;
+                case BLUESTACKS:
+                    this.emulator = new BlueStacksEmulator(consolePath);
                     break;
                 default:
                     throw new IllegalArgumentException("Unsupported emulator type: " + emulatorType);

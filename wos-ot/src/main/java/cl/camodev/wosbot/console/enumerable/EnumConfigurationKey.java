@@ -23,6 +23,7 @@ public enum EnumConfigurationKey {
 	MUMU_PATH_STRING("C:\\Program Files\\Netease\\MuMuPlayer\\nx_main", String.class),
 	MEMU_PATH_STRING("", String.class),
 	LDPLAYER_PATH_STRING("", String.class),
+	BLUESTACKS_PATH_STRING("C:\\Program Files\\BlueStacks_nxt", String.class),
 	CURRENT_EMULATOR_STRING("", String.class),
 	DISCORD_TOKEN_STRING("", String.class),
 	TELEGRAM_BOT_ENABLED_BOOL("false", Boolean.class),

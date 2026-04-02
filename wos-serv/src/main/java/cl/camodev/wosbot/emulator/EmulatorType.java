@@ -6,7 +6,8 @@ public enum EmulatorType {
 	// @formatter:off
     MUMU("MuMuPlayer", EnumConfigurationKey.MUMU_PATH_STRING.name(), "MuMuManager.exe","C:\\Program Files\\Netease\\MuMuPlayer\\nx_main\\"),
     MEMU("MEmu Player", EnumConfigurationKey.MEMU_PATH_STRING.name(), "memuc.exe","C:\\Program Files\\Microvirt\\MEmu\\"),
-    LDPLAYER("LDPlayer", EnumConfigurationKey.LDPLAYER_PATH_STRING.name(), "ldconsole.exe","C:\\LDPlayer\\LDPlayer9\\");
+    LDPLAYER("LDPlayer", EnumConfigurationKey.LDPLAYER_PATH_STRING.name(), "ldconsole.exe","C:\\LDPlayer\\LDPlayer9\\"),
+    BLUESTACKS("BlueStacks 5", EnumConfigurationKey.BLUESTACKS_PATH_STRING.name(), "HD-Player.exe","C:\\Program Files\\BlueStacks_nxt\\");
 	    // @formatter:on
 
 	private final String displayName;
