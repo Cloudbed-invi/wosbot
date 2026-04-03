@@ -288,6 +288,8 @@ java -jar wos-bot-1.7.1.jar
   <a href="#-emulator-configuration"><img src="https://img.shields.io/badge/MEmu-✅_Supported-4CAF50?style=for-the-badge&labelColor=1b3a5c" alt="MEmu" /></a>
   &nbsp;
   <a href="#-emulator-configuration"><img src="https://img.shields.io/badge/LDPlayer_9-✅_Supported-4CAF50?style=for-the-badge&labelColor=1b3a5c" alt="LDPlayer" /></a>
+  &nbsp;
+  <a href="#-emulator-configuration"><img src="https://img.shields.io/badge/BlueStacks_5-✅_Supported-4CAF50?style=for-the-badge&labelColor=1b3a5c" alt="BlueStacks" /></a>
 </div>
 
 <br/>
@@ -322,6 +324,14 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 
 > [!WARNING]
 > You must manually enable ADB: `Settings → Other settings → ADB debugging → Enable local connection`
+</details>
+
+<details>
+<summary><b>📂 BlueStacks 5</b></summary>
+
+```
+C:\Program Files\BlueStacks_nxt\HD-Player.exe
+```
 </details>
 
 <br/>
