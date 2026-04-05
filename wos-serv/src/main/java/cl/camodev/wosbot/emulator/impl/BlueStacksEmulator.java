@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory;
 
 public class BlueStacksEmulator extends Emulator {
     private static final Logger logger = LoggerFactory.getLogger(BlueStacksEmulator.class);
-    private static final String BS_CONFIG_PATH = "C:\\ProgramData\\BlueStacks_nxt\\bluestacks.conf";
+    private String discoveredConfigPath = null;
 
     public BlueStacksEmulator(String consolePath) {
         super(consolePath);
@@ -44,11 +44,40 @@ public class BlueStacksEmulator extends Emulator {
         return "127.0.0.1:" + port;
     }
 
-    private String resolveInternalName(String name) {
-        File configFile = new File(BS_CONFIG_PATH);
-        if (!configFile.exists()) {
-            return name; 
+    private String findConfigPath() {
+        if (discoveredConfigPath != null) {
+            return discoveredConfigPath;
         }
+
+        // Potential locations for bluestacks.conf
+        String[] possiblePaths = {
+            consolePath + File.separator + "bluestacks.conf", // Same folder as HD-Player.exe
+            new File(consolePath).getParent() + File.separator + "bluestacks.conf", // One level up (Common for custom installs)
+            "C:\\ProgramData\\BlueStacks_nxt\\bluestacks.conf", // Default System Data Path
+            "D:\\ProgramData\\BlueStacks_nxt\\bluestacks.conf", // Common alternative drive
+            "E:\\ProgramData\\BlueStacks_nxt\\bluestacks.conf"  // Common alternative drive
+        };
+
+        for (String path : possiblePaths) {
+            File file = new File(path);
+            if (file.exists()) {
+                logger.debug("Discovered BlueStacks config at: {}", path);
+                discoveredConfigPath = path;
+                return path;
+            }
+        }
+
+        logger.warn("Could not locate bluestacks.conf in common locations or user-selected path.");
+        return null;
+    }
+
+    private String resolveInternalName(String name) {
+        String configPath = findConfigPath();
+        if (configPath == null) {
+            return name;
+        }
+
+        File configFile = new File(configPath);
 
         Pattern displayPattern = Pattern.compile("bst.instance\\.(.+)\\.display_name=\"(.+)\"");
         String firstInstance = null;
@@ -85,10 +114,12 @@ public class BlueStacksEmulator extends Emulator {
     }
 
     private String findPortInConfig(String internalName) {
-        File configFile = new File(BS_CONFIG_PATH);
-        if (!configFile.exists()) {
+        String configPath = findConfigPath();
+        if (configPath == null) {
             return null;
         }
+
+        File configFile = new File(configPath);
 
         // Search for both bst.instance.<id>.adb_port and bst.instance.<id>.status.adb_port
         String pattern1 = "bst.instance." + internalName + ".adb_port=\"(\\d+)\"";
@@ -101,10 +132,24 @@ public class BlueStacksEmulator extends Emulator {
             String line;
             while ((line = reader.readLine()) != null) {
                 Matcher m1 = p1.matcher(line);
-                if (m1.find()) return m1.group(1);
+                if (m1.find()) {
+                    String port = m1.group(1);
+                    if ("0".equals(port)) {
+                        logger.debug("BlueStacks instance {} ADB port is currently 0 (Starting up...)", internalName);
+                        return null;
+                    }
+                    return port;
+                }
                 
                 Matcher m2 = p2.matcher(line);
-                if (m2.find()) return m2.group(1);
+                if (m2.find()) {
+                    String port = m2.group(1);
+                    if ("0".equals(port)) {
+                        logger.debug("BlueStacks instance {} ADB port is currently 0 (Starting up...)", internalName);
+                        return null;
+                    }
+                    return port;
+                }
             }
         } catch (IOException e) {
             logger.error("Error reading BlueStacks config for port", e);
@@ -128,6 +173,11 @@ public class BlueStacksEmulator extends Emulator {
      * Automatically enables ADB in bluestacks.conf if it's currently disabled.
      */
     private void ensureAdbEnabled(String internalName) {
+        String configPath = findConfigPath();
+        if (configPath == null) {
+            return;
+        }
+
         try {
             // Using PowerShell to edit the config file. This handles permissions better 
             // and allows us to perform a safer regex replace on the file contents.
@@ -142,7 +192,7 @@ public class BlueStacksEmulator extends Emulator {
                 "    Set-Content $path $content; " +
                 "    Write-Output 'ENABLED'; " +
                 "}", 
-                BS_CONFIG_PATH, search, search, replace
+                configPath, search, search, replace
             );
             
             String[] command = { "powershell.exe", "-Command", psCommand };

@@ -332,6 +332,9 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 ```
 C:\Program Files\BlueStacks_nxt\HD-Player.exe
 ```
+
+> [!TIP]
+> **Custom Installation:** If you installed BlueStacks on a different drive (e.g., `D:\`), just select the folder containing `HD-Player.exe`. The bot will automatically locate your `bluestacks.conf` and ADB ports.
 </details>
 
 <br/>

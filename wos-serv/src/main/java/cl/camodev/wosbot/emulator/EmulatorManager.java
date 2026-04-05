@@ -86,7 +86,7 @@ public class EmulatorManager {
                 .map(Integer::parseInt)
                 .orElse(Integer.parseInt(EnumConfigurationKey.MAX_RUNNING_EMULATORS_INT.getDefaultValue()));
         try {
-            EmulatorType emulatorType = EmulatorType.valueOf(savedActiveEmulator);
+            EmulatorType emulatorType = EmulatorType.valueOf(savedActiveEmulator.toUpperCase().trim());
             String consolePath = globalConfig.get(emulatorType.getConfigKey());
 
             if (consolePath == null || consolePath.isEmpty()) {
