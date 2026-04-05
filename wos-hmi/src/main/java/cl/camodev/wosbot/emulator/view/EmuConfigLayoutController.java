@@ -79,7 +79,7 @@ public class EmuConfigLayoutController {
 		for (EmulatorType type : EmulatorType.values()) {
 			String defaultPath = globalConfig.getOrDefault(type.getConfigKey(), type.getDefaultPath());
 			EmulatorAux emulator = new EmulatorAux(type, defaultPath);
-			emulator.setActive(type.name().equals(currentEmulator));
+			emulator.setActive(type.name().equalsIgnoreCase(currentEmulator));
 			emulatorList.add(emulator);
 		}
 

@@ -286,7 +286,7 @@ public class LauncherLayoutController implements IProfileLoadListener, IStaminaC
         EmulatorType activeEmulator = null;
         if (savedActiveEmulator != null && !savedActiveEmulator.isEmpty()) {
             try {
-                activeEmulator = EmulatorType.valueOf(savedActiveEmulator);
+                activeEmulator = EmulatorType.valueOf(savedActiveEmulator.toUpperCase().trim());
             } catch (IllegalArgumentException e) {
                 // Ignore Invalid Enum constant
             }
