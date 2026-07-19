@@ -1,5 +1,7 @@
 package dev.frostguard.engine.helper;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -20,11 +22,7 @@ class DailyMissionPatternEvidenceTest {
 
     @BeforeAll
     static void loadOpenCv() throws IOException {
-        try {
-            OpenCvPatternLocator.extractAndLoadNative("/native/opencv/opencv_java4110.dll");
-        } catch (UnsatisfiedLinkError ignored) {
-            // The app and other tests may already have loaded the native library in this JVM.
-        }
+        OpenCvTestSupport.assumeOpenCvAvailable();
     }
 
     @Test
@@ -100,6 +98,10 @@ class DailyMissionPatternEvidenceTest {
                 "Disabled Claim pattern should identify the grey button: " + disabledClaimHit);
         assertTrue(narrowClaimHit.getPoint().manhattanDistanceTo(disabledClaimHit.getPoint()) <= 20,
                 "Disabled and narrow Claim patterns should refer to the same button");
+        assertNotNull(disabledClaimHit.getTemplateSize(),
+                "Matched template size should be available for bounded taps");
+        assertEquals(165, disabledClaimHit.getTemplateSize().getWidth());
+        assertEquals(80, disabledClaimHit.getTemplateSize().getHeight());
     }
 
     private static ImageSearchResultData locate(byte[] frame, String template, PointData bottomRight) {

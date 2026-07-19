@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.StringJoiner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
@@ -25,6 +27,7 @@ import org.opencv.imgproc.Imgproc;
 import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.RawImageData;
+import dev.frostguard.api.domain.SizeData;
 import dev.frostguard.api.configs.TemplatesEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +50,7 @@ import org.slf4j.LoggerFactory;
 public class OpenCvPatternLocator {
 
     private static final Logger log = LoggerFactory.getLogger(OpenCvPatternLocator.class);
+    private static volatile boolean openCvLoaded = false;
 
     /* ------------------------------------------------------------------ */
     /*  Sprite caches – keyed by classpath resource path                   */
@@ -63,6 +67,10 @@ public class OpenCvPatternLocator {
     /** Raw bytes read from the classpath (avoids re-reading the JAR). */
     private static final ConcurrentHashMap<String, byte[]> rawBytesStore =
             new ConcurrentHashMap<>();
+
+    private static ImageSearchResultData hitWithTemplateSize(PointData point, double score, int width, int height) {
+        return new ImageSearchResultData(true, point, score, new SizeData(width, height));
+    }
 
     /* ------------------------------------------------------------------ */
     /*  Thread pool & lifecycle                                            */
@@ -263,7 +271,7 @@ public class OpenCvPatternLocator {
             int centerY = bestY + clipY + bestH / 2;
             log.info("=== Pattern Correlation Completed === Pattern: {} (multi-scale), Total: {} ms, Match: {}%, Scale: {}, Position: ({},{})",
                     spriteLabel, totalTime, String.format("%.2f", scorePct), String.format("%.2f", bestScale), centerX, centerY);
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), scorePct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), scorePct, bestW, bestH);
 
         } catch (Exception e) {
             log.error(tagged("Exception during multi-scale correlation"), e);
@@ -413,7 +421,7 @@ public class OpenCvPatternLocator {
             int centerY = (int) (mmr.maxLoc.y + roi.y + template.rows() / 2.0);
             log.info(tagged("Custom template (bytes): FOUND at (" + centerX + "," + centerY
                     + ") match: " + String.format("%.2f", matchPct) + "%"));
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), matchPct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), matchPct, template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("matchFromSuppliedBytes: exception during search"), e);
@@ -500,7 +508,7 @@ public class OpenCvPatternLocator {
 
             int centerX = (int) (mmr.maxLoc.x + roi.x + grayTemplate.cols() / 2.0);
             int centerY = (int) (mmr.maxLoc.y + roi.y + grayTemplate.rows() / 2.0);
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), matchPct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), matchPct, template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("matchFromSuppliedBytesMono: exception during search"), e);
@@ -809,7 +817,8 @@ public class OpenCvPatternLocator {
             log.debug("=== Pattern Correlation Completed === Pattern: {}, Total: {} ms, Match: {}%, Position: ({},{})",
                     spriteLabel, totalTime, String.format("%.2f", scorePct), (int) centerX, (int) centerY);
 
-            return new ImageSearchResultData(true, new PointData((int) centerX, (int) centerY), scorePct);
+            return hitWithTemplateSize(new PointData((int) centerX, (int) centerY), scorePct,
+                    template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("Exception during pattern correlation"), e);
@@ -986,7 +995,7 @@ public class OpenCvPatternLocator {
 
             int centerX = (int) (mmr.maxLoc.x + clipX + template.cols() / 2.0);
             int centerY = (int) (mmr.maxLoc.y + clipY + template.rows() / 2.0);
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), matchPct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), matchPct, template.cols(), template.rows());
 
         } finally {
             if (roiSlice != null)
@@ -1086,8 +1095,8 @@ public class OpenCvPatternLocator {
                 double centerX = bestPos.x + roi.x + halfSpriteW;
                 double centerY = bestPos.y + roi.y + halfSpriteH;
 
-                results.add(new ImageSearchResultData(true,
-                        new PointData((int) centerX, (int) centerY), score * 100.0));
+                results.add(hitWithTemplateSize(new PointData((int) centerX, (int) centerY),
+                        score * 100.0, sprW, sprH));
 
                 // Optimized suppression
                 int supX = Math.max(0, (int) bestPos.x - halfSpriteW);
@@ -1198,7 +1207,8 @@ public class OpenCvPatternLocator {
             double centerX = bestPos.x + roi.x + (template.cols() / 2.0);
             double centerY = bestPos.y + roi.y + (template.rows() / 2.0);
 
-            return new ImageSearchResultData(true, new PointData((int) centerX, (int) centerY), scorePct);
+            return hitWithTemplateSize(new PointData((int) centerX, (int) centerY), scorePct,
+                    template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("Exception during pattern correlation"), e);
@@ -1301,7 +1311,7 @@ public class OpenCvPatternLocator {
             int centerX = (int) (mmr.maxLoc.x + (double) template.cols() / 2 + clipX);
             int centerY = (int) (mmr.maxLoc.y + (double) template.rows() / 2 + clipY);
 
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), scorePct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), scorePct, template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("Exception during mono pattern correlation"), e);
@@ -1408,8 +1418,8 @@ public class OpenCvPatternLocator {
                 double centerX = bestPos.x + roi.x + halfSpriteW;
                 double centerY = bestPos.y + roi.y + halfSpriteH;
 
-                results.add(new ImageSearchResultData(true,
-                        new PointData((int) centerX, (int) centerY), score * 100.0));
+                results.add(hitWithTemplateSize(new PointData((int) centerX, (int) centerY),
+                        score * 100.0, sprW, sprH));
 
                 // Optimized suppression
                 int supX = Math.max(0, (int) bestPos.x - halfSpriteW);
@@ -1527,7 +1537,7 @@ public class OpenCvPatternLocator {
             int centerX = (int) (mmr.maxLoc.x + (double) template.cols() / 2 + clipX);
             int centerY = (int) (mmr.maxLoc.y + (double) template.rows() / 2 + clipY);
 
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), scorePct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), scorePct, template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("Exception during mono pattern correlation with raw data"), e);
@@ -1634,8 +1644,8 @@ public class OpenCvPatternLocator {
                 double centerX = bestPos.x + roi.x + halfSpriteW;
                 double centerY = bestPos.y + roi.y + halfSpriteH;
 
-                results.add(new ImageSearchResultData(true,
-                        new PointData((int) centerX, (int) centerY), score * 100.0));
+                results.add(hitWithTemplateSize(new PointData((int) centerX, (int) centerY),
+                        score * 100.0, sprW, sprH));
 
                 // Optimized suppression
                 int supX = Math.max(0, (int) bestPos.x - halfSpriteW);
@@ -1750,8 +1760,8 @@ public class OpenCvPatternLocator {
                 double centerX = bestPos.x + roi.x + halfSpriteW;
                 double centerY = bestPos.y + roi.y + halfSpriteH;
 
-                results.add(new ImageSearchResultData(true,
-                        new PointData((int) centerX, (int) centerY), score * 100.0));
+                results.add(hitWithTemplateSize(new PointData((int) centerX, (int) centerY),
+                        score * 100.0, sprW, sprH));
 
                 // Optimized suppression
                 int supX = Math.max(0, (int) bestPos.x - halfSpriteW);
@@ -1844,6 +1854,34 @@ public class OpenCvPatternLocator {
     }
 
     /**
+     * Loads OpenCV natives for the current OS from the openpnp runtime dependency.
+     * Windows keeps the bundled DLL fallback for existing packaged distributions.
+     */
+    public static void loadOpenCvNative() throws IOException {
+        if (openCvLoaded) {
+            return;
+        }
+        synchronized (OpenCvPatternLocator.class) {
+            if (openCvLoaded) {
+                return;
+            }
+            try {
+                nu.pattern.OpenCV.loadLocally();
+                openCvLoaded = true;
+                log.info(tagged("OpenCV native library loaded (version " + Core.VERSION + ") from openpnp runtime."));
+            } catch (Throwable ex) {
+                if (isWindows()) {
+                    log.warn(tagged("OpenCV.loadLocally() failed, using bundled Windows DLL fallback: " + ex.getMessage()));
+                    extractAndLoadNative("/native/opencv/opencv_java4110.dll");
+                    openCvLoaded = true;
+                    return;
+                }
+                throw new IOException(buildOpenCvFailureMessage(ex), ex);
+            }
+        }
+    }
+
+    /**
      * Extracts a bundled native library from the classpath into
      * {@code lib/opencv/} and loads it via {@link System#load}.
      *
@@ -1914,5 +1952,22 @@ public class OpenCvPatternLocator {
             return -1L;
         }
     }
-}
 
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    private static String buildOpenCvFailureMessage(Throwable error) {
+        StringJoiner joiner = new StringJoiner("; ");
+        joiner.add("Failed to load OpenCV native library");
+        joiner.add("javaHome=" + System.getProperty("java.home"));
+        joiner.add("os=" + System.getProperty("os.name") + "/" + System.getProperty("os.arch"));
+        if (error.getMessage() == null || error.getMessage().isBlank()) {
+            joiner.add("cause=" + error.getClass().getSimpleName());
+        } else {
+            joiner.add("cause=" + error.getClass().getSimpleName() + ": " + error.getMessage());
+        }
+        joiner.add("hint=Install the Linux libraries required by org.openpnp:opencv or use a compatible JDK architecture");
+        return joiner.toString();
+    }
+}
