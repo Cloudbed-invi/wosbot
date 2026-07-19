@@ -46,14 +46,14 @@ Status values:
 | marker | `e4e79f9` | 2026-06-15 | Merges `mymain` fixes into 2.0.0 line. | Inspect for merge-only docs/Life Essence resolution. |
 | check | `8a4c3f1` | 2026-06-16 | Linux build/docs, packaging, Life Essence carry-over. | `README.md`, `ci`, scripts, `fg-app` assembly, build docs. |
 | marker | `1d84a8d` | 2026-06-18 | Groups Linux/build-doc follow-up. | Inspect for merge-only changes. |
-| pending | `7b40567` | 2026-06-19 | Add scheduled shield custom task. | `fg-engine` custom task service/scheduler, `fg-app` custom task UI, examples. |
-| pending | `34df727` | 2026-06-29 | Shield task settings, embedded templates, template asset path helper. | `fg-engine`, `fg-app`, `fg-vision` templates, `fg-app` assembly. |
-| pending | `a7a21c5` | 2026-06-30 | Add expert idle exploration custom task example. | Custom task examples and packaging. |
-| check | `c6574a3` | 2026-06-30 | Old AGENTS update and custom task folder packaging. | Keep current `AGENTS.md`; port packaging behavior only if missing. |
-| pending | `e436118` | 2026-07-01 | Task Builder capture cross offset CSS fix. | `fg-app` task builder CSS/layout. |
-| pending | `e4852ec` | 2026-07-01 | Add name field to Task Builder node and generated code. | `fg-api` automation model, `fg-app` task builder, `fg-engine` code generator. |
+| ported | `7b40567` | 2026-06-19 | Add scheduled shield custom task. | `fg-engine` custom task service/scheduler, `fg-app` custom task UI, examples. |
+| ported | `34df727` | 2026-06-29 | Shield task settings, embedded templates, template asset path helper. | `fg-engine`, `fg-app`, `fg-vision` templates, `fg-app` assembly. |
+| ported | `a7a21c5` | 2026-06-30 | Add expert idle exploration custom task example. | Custom task examples and packaging. |
+| ported | `c6574a3` | 2026-06-30 | Old AGENTS update and custom task folder packaging. | Kept current `AGENTS.md`; ported custom task folder packaging. |
+| ported | `e436118` | 2026-07-01 | Task Builder capture cross offset CSS fix. | `fg-app` task builder CSS/layout. |
+| ported | `e4852ec` | 2026-07-01 | Add name field to Task Builder node and generated code. | `fg-api` automation model, `fg-app` task builder, `fg-engine` code generator. |
 | marker | `7cc0785` | 2026-07-06 | Groups scheduled shield/custom-task branch. | Inspect for merge-only changes after leaf commits. |
-| pending | `ccadf48` | 2026-07-14 | Task file / JSON support. | `fg-engine` `TaskBuilderService`, `fg-app` task builder UI, examples. |
+| ported | `ccadf48` | 2026-07-14 | Task file / JSON support. | `fg-engine` `TaskBuilderService`, `fg-app` task builder UI, examples. |
 | ported | `5bb54c3` | 2026-07-14 | Exploration claim disabled detection and image-search result size. | `fg-api` `ImageSearchResultData`, `fg-vision` locator result population, `fg-tasks` exploration routines. |
 | skip | `8d7a2fa` | 2026-07-15 | Version-only release bump to old 2.0.3. | Skip unless Frostguard version policy requires it. |
 | ported | `8b2c735` | 2026-07-19 | Exploration combat locked fix and exploration docs. | `fg-tasks` `DoExplorationRoutine`, docs if still relevant. |
@@ -61,19 +61,13 @@ Status values:
 
 ## Remaining Porting Work
 
-The semantic port is not complete. The completed work so far covers Life Essence, exploration claim/result-size handling, Do Exploration timing, and the Linux OpenCV loader. Remaining non-platform commits are:
+The semantic port is not complete. The completed work so far covers Life Essence, exploration claim/result-size handling, Do Exploration timing, the Linux OpenCV loader, Task Builder JSON/name/crosshair fixes, the custom task examples, and the scheduled shield task/settings work.
 
-- `7b40567`: scheduled shield custom task.
-- `34df727`: shield task settings, embedded templates, and template asset path helper.
-- `a7a21c5`: expert idle exploration custom task example.
-- `e436118`: Task Builder capture cross offset CSS fix.
-- `e4852ec`: Task Builder node name field and generated code support.
-- `ccadf48`: task-file / JSON support in the Task Builder flow.
+Remaining non-platform leaf commits: none currently known.
 
 Remaining commits to inspect before deciding whether they produce additional work:
 
 - `8a4c3f1`: Linux docs/scripts/packaging and any Life Essence carry-over not already covered.
-- `c6574a3`: custom task folder packaging only; do not overwrite the current `AGENTS.md`.
 - `e4e79f9`, `1d84a8d`, `7cc0785`: merge markers; inspect only for unique merge-resolution changes after their leaf commits are handled.
 
 ## Linux Foundation From macOS Branch
@@ -143,3 +137,8 @@ Record completed work here as commits are replayed.
 - `5bb54c3`: disabled exploration claim detection was already present; added optional `SizeData` to `ImageSearchResultData`, populated template size from OpenCV hit paths, and changed exploration reward claiming to tap within the matched claim-button bounds when size is available.
 - `8b2c735` and `e0afe85`: rewrote `DoExplorationRoutine` around named tap areas, a bounded 2-minute fighting window, 15-second result-start delay, 25-second result detection window, victory/defeat statistics, detected explore-button tapping, and adapted task/design docs for Frostguard paths. Skipped the old version bump and legacy `AGENTS.md` path notes.
 - Linux OpenCV foundation: `mvn clean install package` initially failed on Linux because both the app and evidence tests loaded the bundled Windows-only `opencv_java4110.dll`. Ported the old repo's cross-platform `org.openpnp` native loading path into `OpenCvPatternLocator.loadOpenCvNative()`, kept the DLL as a Windows fallback, and updated app startup/tests to use the new loader. Ubuntu now runs the OpenCV evidence tests instead of skipping them.
+- `e436118`: ported the Task Builder preview alignment fix so crosshair coordinates match the top-aligned preview image.
+- `e4852ec`: added Task Builder node names to `AutomationStep`, bound the existing UI name field, displayed names on node cards, and emitted node names as generated Java comments.
+- `ccadf48`: added Task Builder JSON import/save support, generated Java sidecar output, current `custom_tasks` directory resolution, and a focused save/load test.
+- `a7a21c5` and `c6574a3`: added the adapted `expert_idle_exploration` custom task example and included `custom_tasks` in the desktop bundle while leaving the existing `AGENTS.md` untouched.
+- `7b40567` and `34df727`: added the adapted `shield` custom task, configurable custom-task settings (`firstExecutionUtc`, `followUpDelayHours`), persisted settings for disabled imported tasks, startup/live scheduling through a shared `ScheduleService.scheduleCustomTask` path, safe completion handling for tasks that clear their next schedule, the embedded `SHIELD_MY_CITY` template asset, and desktop bundle inclusion through the existing `custom_tasks` packaging.
