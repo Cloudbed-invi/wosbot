@@ -28,6 +28,40 @@ Package rename: `cl.camodev.wosbot...` became `dev.frostguard...`.
 
 Important `fg-vision` refactor: do not reintroduce the old OCR provider interface. The new OCR integration point is `ResilientOcrExecutor.TextExtractor`, documented in `fg-vision/REFACTORING_NOTES.md`.
 
+## Design, Rename, and Deletion Notes
+
+Use this section before porting old diffs. It records semantic replacements that are easy to miss when file paths no longer match.
+
+### Module and Package Renames
+
+- Root Maven modules use the `fg-*` names; do not recreate old `wos-*` modules.
+- Old `cl.camodev.wosbot.ot` DTOs and enums now live under `dev.frostguard.api.domain` and `dev.frostguard.api.configs`.
+- Old `cl.camodev.wosbot.serv.task.impl` task classes map either to `fg-tasks` routines or to runtime custom task examples under root `custom_tasks/`.
+- Old HMI controllers under `cl.camodev.wosbot.*.view` map to `fg-app/src/main/java/dev/frostguard/app/panel/*` controllers and `/layout` or `/styles` resources.
+- Old watcher code maps to `fg-watcher`; do not move watcher behavior into the desktop app module.
+
+### Architecture Replacements
+
+- `ServScheduler` responsibilities are split between `ScheduleService`, `TaskDispatcher`, and per-profile `TaskQueue`.
+- `ServTaskManager` behavior is represented by `TaskManagementService` and `TaskStateData`.
+- Runtime custom tasks are managed by `CustomTaskService`; live/startup scheduling should go through `ScheduleService.scheduleCustomTask(...)`.
+- Template search from task code should use `TemplateSearchHelper` and `TemplatesEnum`, not old file-path-only helpers unless a new classpath template enum is impossible.
+- Task Builder persistence uses `TaskBuilderService` JSON definitions plus generated Java sidecars in `custom_tasks/`.
+
+### Assets and Runtime Files
+
+- Template PNGs belong in `fg-vision/src/main/resources/templates` and should be exposed through `fg-api/src/main/resources/config/templates.properties`.
+- Runtime binaries and tools are staged from `tools/` by `fg-app` packaging. Generated or cached native files under `fg-engine/lib/` are not commit candidates.
+- Desktop bundle contents are controlled by `fg-app/src/main/assembly/zip.xml`.
+
+### Intentional Skips and Deletions
+
+- Version-only bumps from the old repository are skipped unless Frostguard release policy asks for them.
+- Old `AGENTS.md` content is not ported over the existing repository guide.
+- Old Windows/autostart documentation is not part of this pass unless it maps cleanly to Frostguard docs.
+- Do not revive the old OCR provider interface removed by the `fg-vision` refactor.
+- Do not restore the Life Essence double-back navigation; the intended behavior is to avoid that extra back sequence.
+
 ## Commit Inventory
 
 Status values:
