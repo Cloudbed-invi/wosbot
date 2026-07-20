@@ -7,8 +7,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-import java.util.StringJoiner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
@@ -50,7 +48,6 @@ import org.slf4j.LoggerFactory;
 public class OpenCvPatternLocator {
 
     private static final Logger log = LoggerFactory.getLogger(OpenCvPatternLocator.class);
-    private static volatile boolean openCvLoaded = false;
 
     /* ------------------------------------------------------------------ */
     /*  Sprite caches – keyed by classpath resource path                   */
@@ -1854,34 +1851,6 @@ public class OpenCvPatternLocator {
     }
 
     /**
-     * Loads OpenCV natives for the current OS from the openpnp runtime dependency.
-     * Windows keeps the bundled DLL fallback for existing packaged distributions.
-     */
-    public static void loadOpenCvNative() throws IOException {
-        if (openCvLoaded) {
-            return;
-        }
-        synchronized (OpenCvPatternLocator.class) {
-            if (openCvLoaded) {
-                return;
-            }
-            try {
-                nu.pattern.OpenCV.loadLocally();
-                openCvLoaded = true;
-                log.info(tagged("OpenCV native library loaded (version " + Core.VERSION + ") from openpnp runtime."));
-            } catch (Throwable ex) {
-                if (isWindows()) {
-                    log.warn(tagged("OpenCV.loadLocally() failed, using bundled Windows DLL fallback: " + ex.getMessage()));
-                    extractAndLoadNative("/native/opencv/opencv_java4110.dll");
-                    openCvLoaded = true;
-                    return;
-                }
-                throw new IOException(buildOpenCvFailureMessage(ex), ex);
-            }
-        }
-    }
-
-    /**
      * Extracts a bundled native library from the classpath into
      * {@code lib/opencv/} and loads it via {@link System#load}.
      *
@@ -1953,21 +1922,4 @@ public class OpenCvPatternLocator {
         }
     }
 
-    private static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
-    }
-
-    private static String buildOpenCvFailureMessage(Throwable error) {
-        StringJoiner joiner = new StringJoiner("; ");
-        joiner.add("Failed to load OpenCV native library");
-        joiner.add("javaHome=" + System.getProperty("java.home"));
-        joiner.add("os=" + System.getProperty("os.name") + "/" + System.getProperty("os.arch"));
-        if (error.getMessage() == null || error.getMessage().isBlank()) {
-            joiner.add("cause=" + error.getClass().getSimpleName());
-        } else {
-            joiner.add("cause=" + error.getClass().getSimpleName() + ": " + error.getMessage());
-        }
-        joiner.add("hint=Install the Linux libraries required by org.openpnp:opencv or use a compatible JDK architecture");
-        return joiner.toString();
-    }
 }

@@ -22,7 +22,11 @@ class DailyMissionPatternEvidenceTest {
 
     @BeforeAll
     static void loadOpenCv() throws IOException {
-        OpenCvTestSupport.assumeOpenCvAvailable();
+        try {
+            OpenCvPatternLocator.extractAndLoadNative("/native/opencv/opencv_java4110.dll");
+        } catch (UnsatisfiedLinkError ignored) {
+            // The app and other tests may already have loaded the native library in this JVM.
+        }
     }
 
     @Test
