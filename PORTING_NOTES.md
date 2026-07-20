@@ -36,6 +36,7 @@ Status values:
 - `check`: inspect for existing equivalent before coding.
 - `required`: confirmed desired if missing/incomplete here.
 - `ported`: applied or confirmed present in Frostguard.
+- `platform`: inspected; remaining work is platform/build documentation or runtime support tracked separately.
 - `marker`: merge/grouping commit; inspect only for merge-resolution-only changes.
 - `skip`: do not port unless policy changes.
 
@@ -44,7 +45,7 @@ Status values:
 | ported | `b59fcac` | 2026-05-12 | Life Essence: remove extra back tap after collection. | `fg-tasks` Life Essence routine. |
 | marker | `6f6c26f` | 2026-06-13 | Groups janeistaken macOS integration branch. | Context only; see Linux foundation notes. |
 | marker | `e4e79f9` | 2026-06-15 | Merges `mymain` fixes into 2.0.0 line. | Inspect for merge-only docs/Life Essence resolution. |
-| check | `8a4c3f1` | 2026-06-16 | Linux build/docs, packaging, Life Essence carry-over. | `README.md`, `ci`, scripts, `fg-app` assembly, build docs. |
+| platform | `8a4c3f1` | 2026-06-16 | Linux build/docs, packaging, Life Essence carry-over. | Life Essence covered; Linux docs/scripts remain platform follow-up. |
 | marker | `1d84a8d` | 2026-06-18 | Groups Linux/build-doc follow-up. | Inspect for merge-only changes. |
 | ported | `7b40567` | 2026-06-19 | Add scheduled shield custom task. | `fg-engine` custom task service/scheduler, `fg-app` custom task UI, examples. |
 | ported | `34df727` | 2026-06-29 | Shield task settings, embedded templates, template asset path helper. | `fg-engine`, `fg-app`, `fg-vision` templates, `fg-app` assembly. |
@@ -61,14 +62,16 @@ Status values:
 
 ## Remaining Porting Work
 
-The semantic port is not complete. The completed work so far covers Life Essence, exploration claim/result-size handling, Do Exploration timing, the Linux OpenCV loader, Task Builder JSON/name/crosshair fixes, the custom task examples, and the scheduled shield task/settings work.
+The semantic port inspection pass is complete. The completed work covers Life Essence, exploration claim/result-size handling, Do Exploration timing, the Linux OpenCV loader, Task Builder JSON/name/crosshair fixes, the custom task examples, and the scheduled shield task/settings work.
 
 Remaining non-platform leaf commits: none currently known.
 
-Remaining commits to inspect before deciding whether they produce additional work:
+Required inspection completed on 2026-07-20:
 
-- `8a4c3f1`: Linux docs/scripts/packaging and any Life Essence carry-over not already covered.
-- `e4e79f9`, `1d84a8d`, `7cc0785`: merge markers; inspect only for unique merge-resolution changes after their leaf commits are handled.
+- `8a4c3f1`: Life Essence carry-over was already ported. The remaining differences are Linux/Windows docs, quick-build helper behavior, docs packaging, and version metadata; keep only the Linux-relevant parts in the platform follow-up list below.
+- `e4e79f9`: merge-resolution diff adds old install/autostart docs and repeats the Life Essence back-tap removal. No additional Frostguard code port is required.
+- `1d84a8d`: merge-resolution diff contains Linux README/docs/quick-build/packaging material only. No additional non-platform code port is required.
+- `7cc0785`: merge-resolution diff groups the custom-task branch already ported in `5593ea3`; old `AGENTS.md` and version bump changes remain intentionally skipped.
 
 ## Linux Foundation From macOS Branch
 
