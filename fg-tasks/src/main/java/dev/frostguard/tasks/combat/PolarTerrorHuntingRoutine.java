@@ -10,6 +10,7 @@ import dev.frostguard.api.domain.PointData;
 import dev.frostguard.data.entity.DailyTask;
 import dev.frostguard.data.repository.DailyTaskRepository;
 import dev.frostguard.engine.helper.MarchSlotAvailabilityEstimator;
+import dev.frostguard.engine.helper.StaminaTopUpResult;
 import dev.frostguard.engine.nav.CommonGameAreas;
 import dev.frostguard.engine.nav.CommonOCRSettings;
 import dev.frostguard.engine.nav.SearchConfigConstants;
@@ -63,6 +64,7 @@ private static final MarchSlotAvailabilityEstimator.Settings MARCH_SLOT_ESTIMATE
 private static final int TARGET_TAKEN_MAX_RETRIES = 3;
 private static final int TARGET_TAKEN_RETRY_MINUTES = 1;
 private static final int RALLY_FAILURE_RETRY_MINUTES = 5;
+private static final int STAMINA_TOP_UP_RETRY_MINUTES = 5;
 // Holds the march slot when the travel time could not be read.
 private static final int UNKNOWN_TRAVEL_HOLD_MINUTES = 10;
 
@@ -111,6 +113,7 @@ private enum RallyLaunchOutcome {
         MARCH_QUEUE_FULL,
         NO_TROOPS_AVAILABLE,
         STAMINA_ITEMS_DISABLED,
+        STAMINA_ITEMS_INSUFFICIENT,
         STAMINA_REFILL_FAILED
     }
 
@@ -225,6 +228,13 @@ private record RallyLaunchResult(RallyLaunchOutcome outcome, String detail) {
             if (result.outcome() == RallyLaunchOutcome.MARCH_QUEUE_FULL) {
                 logInfo(routineLogPolarTerrorHuntingLine("March queue popup detected after Rally. Waiting for a march slot to return."));
                 reschedule(LocalDateTime.now().plusMinutes(UNKNOWN_MARCH_RETRY_MINUTES));
+                return;
+            }
+
+            if (result.outcome() == RallyLaunchOutcome.STAMINA_ITEMS_INSUFFICIENT) {
+                logInfo(routineLogPolarTerrorHuntingLine(
+                        "Confirmed usable stamina items cannot fund the rally; waiting for regeneration."));
+                rescheduleForStaminaRegen();
                 return;
             }
 
@@ -372,9 +382,13 @@ private RallyLaunchResult launchSingleRallyFlow(int polarLevel, boolean useFlag,
             tapPoint(deploy.getPoint());
             sleepTask(1000);
 
-            if (!staminaHelper.refillFromOpenDialog(rallyStaminaCost, staminaItemReserve)) {
-                return fail(RallyLaunchOutcome.STAMINA_REFILL_FAILED,
-                        "Could not refill stamina from the obtain-more dialog");
+            StaminaTopUpResult refill = staminaHelper.refillFromOpenDialog(
+                    rallyStaminaCost, staminaItemReserve);
+            if (!refill.successful()) {
+                RallyLaunchOutcome outcome = refill.confirmedItemShortage()
+                        ? RallyLaunchOutcome.STAMINA_ITEMS_INSUFFICIENT
+                        : RallyLaunchOutcome.STAMINA_REFILL_FAILED;
+                return fail(outcome, "Stamina refill ended with " + refill.status());
             }
 
             deploy = templateSearchHelper.locatePattern(
@@ -499,6 +513,14 @@ private void rescheduleForStaminaRegen() {
         reschedule(retryAt);
     }
 
+private void rescheduleForStaminaTopUpRetry(StaminaTopUpResult result) {
+        LocalDateTime retryAt = LocalDateTime.now().plusMinutes(STAMINA_TOP_UP_RETRY_MINUTES);
+        logWarning(routineLogPolarTerrorHuntingLine(String.format(
+                "Stamina gate: top-up ended with %s; retrying UI/OCR in %d min at %s",
+                result.status(), STAMINA_TOP_UP_RETRY_MINUTES, GameTimeUtils.formatCountdown(retryAt))));
+        reschedule(retryAt);
+    }
+
 // Cheap in-memory guard before any navigation: when items cannot bridge the gap, opening the march
 // panel only to discover the rally is unaffordable wastes a wake-up and a profile switch.
 private boolean staminaCouldSupportRally() {
@@ -522,8 +544,18 @@ private boolean ensureStaminaForRally() {
                 "Stamina gate: current=%d required=%d (reserve %d + rally %d) useItems=%s",
                 current, required, minStaminaLevel, MAX_POLAR_RALLY_STAMINA_COST, useStaminaItems)));
 
-        if (useStaminaItems && staminaHelper.topUpFromProfile(required, staminaItemReserve))
-            return true;
+        if (useStaminaItems) {
+            StaminaTopUpResult result = staminaHelper.topUpFromProfile(required, staminaItemReserve);
+            switch (PolarStaminaTopUpPolicy.decide(result)) {
+                case CONTINUE:
+                    return true;
+                case RETRY_SOON:
+                    rescheduleForStaminaTopUpRetry(result);
+                    return false;
+                case WAIT_FOR_REGENERATION:
+                    break;
+            }
+        }
 
         rescheduleForStaminaRegen();
         return false;
