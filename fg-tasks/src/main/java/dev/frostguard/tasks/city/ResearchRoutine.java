@@ -9,17 +9,23 @@ import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.PriorityItemData;
 import dev.frostguard.api.domain.RawImageData;
+import dev.frostguard.api.domain.ResearchBadgeData;
+import dev.frostguard.api.domain.TesseractSettingsData;
 import dev.frostguard.engine.config.PriorityConfigResolver;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
+import dev.frostguard.tasks.city.ResearchDialogClassifier.ResearchDialogState;
+import dev.frostguard.tasks.city.ResearchNodeSelectionPolicy.ResearchNode;
+import dev.frostguard.tasks.city.ResearchNodeSelectionPolicy.ResearchRow;
 import dev.frostguard.vision.convert.GameTimeUtils;
+import dev.frostguard.vision.ocr.ResearchBadgeReader;
+import dev.frostguard.vision.ocr.TesseractOcrProvider;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import net.sourceforge.tess4j.TesseractException;
 
@@ -29,11 +35,31 @@ private static final int HAND_CLICK_OFFSET_X_VALUE = -73;
 
 private static final int HAND_CLICK_OFFSET_Y_VALUE = 88;
 
-private static final int RESEARCH_CLICK_OFFSET_X_VALUE = -3;
-
-private static final int RESEARCH_CLICK_OFFSET_Y_VALUE = -54;
-
 private static final int MAX_SCROLL_ATTEMPTS_LIMIT = 10;
+
+private static final int RESEARCH_SCROLL_SETTLE_MILLIS = 1000;
+
+private static final int RESEARCH_ENTRY_ATTEMPTS = 2;
+
+private static final int RESEARCH_ENTRY_RETRY_MINUTES = 5;
+
+private static final int RESEARCH_SAFE_TAP_Y = 180;
+
+private static final PointData RESEARCH_TITLE_TOP_LEFT = new PointData(80, 0);
+
+private static final PointData RESEARCH_TITLE_BOTTOM_RIGHT = new PointData(360, 80);
+
+private static final PointData RESEARCH_TREE_TOP_LEFT = new PointData(0, 150);
+
+private static final PointData RESEARCH_TREE_BOTTOM_RIGHT = new PointData(720, 1180);
+
+private static final PointData RESEARCH_REQUIREMENTS_TOP_LEFT = new PointData(70, 810);
+
+private static final PointData RESEARCH_REQUIREMENTS_BOTTOM_RIGHT = new PointData(500, 1035);
+
+private static final PointData RESEARCH_GO_TOP_LEFT = new PointData(480, 800);
+
+private static final PointData RESEARCH_GO_BOTTOM_RIGHT = new PointData(670, 1040);
 
 private static final PointData RESEARCH_ACTION_TOP_LEFT = new PointData(500, 1135);
 
@@ -60,6 +86,11 @@ private static final SearchConfig REPLENISH_BUTTON_RECHECK = SearchConfig.builde
         .withCoordinates(new PointData(180, 1070), new PointData(535, 1195))
         .build();
 
+private static final TesseractSettingsData RESEARCH_TITLE_OCR = TesseractSettingsData.assembler()
+        .pageAnalysis(TesseractSettingsData.PageAnalysis.SINGLE_LINE)
+        .recognitionEngine(TesseractSettingsData.RecognitionEngine.LSTM_ONLY)
+        .build();
+
 private static final PointData REPLENISH_CONFIRM_POINT = new PointData(511, 1056);
 
 private static final int COMPLETED_RESEARCH_RETRY_SECONDS = 10;
@@ -75,6 +106,12 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 @Override
     protected LaunchPoint getRequiredStartLocation() {
         return LaunchPoint.HOME;
+    }
+
+    @Override
+    protected boolean acceptsInjections() {
+        // A queued home-screen action can steal the transition after the Research Center tap.
+        return false;
     }
 
     @Override
@@ -125,20 +162,12 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
                         GameTimeUtils::parseDuration);
 
                 if (busyTime != null) {
-                    long minutesToWait = busyTime.toMinutes();
-                    LocalDateTime rescheduleTime;
-
-                    if (minutesToWait > 30) {
-                        long halfTime = minutesToWait / 2;
-                        rescheduleTime = LocalDateTime.now().plusMinutes(halfTime);
-                        logInfo(routineLogResearchLine("Research busy for " + minutesToWait + " min. Planning next run at half time: " + halfTime
-                                + " min from now."));
-                    } else {
-                        rescheduleTime = LocalDateTime.now().plusMinutes(minutesToWait);
-                        logInfo(routineLogResearchLine("Research busy for " + minutesToWait + " min. Planning next run at: " + minutesToWait
-                                + " min from now."));
-                    }
-
+                    Duration recheckDelay = ResearchTimerPolicy.recheckDelay(busyTime);
+                    LocalDateTime rescheduleTime = LocalDateTime.now().plus(recheckDelay);
+                    logInfo(routineLogResearchLine("Research busy for "
+                            + formatDuration(busyTime)
+                            + ". Planning next run at half time in "
+                            + formatDuration(recheckDelay) + "."));
                     this.reschedule(rescheduleTime);
                 } else {
                     logWarning(routineLogResearchLine("Could not read research queue time. Planning next run in 1 hour."));
@@ -155,47 +184,13 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         logInfo(routineLogResearchLine("Research queue is Idle. Proceeding..."));
 
 
-        ImageSearchResultData researchCenter = templateSearchHelper.locatePattern(
-                TemplatesEnum.GAME_HOME_SHORTCUTS_RESEARCH_CENTER,
-                SearchConfigConstants.DEFAULT_SINGLE);
-
-        if (!researchCenter.isFound()) {
-            logError(routineLogResearchLine("Research Center shortcut not detected."));
+        if (!openResearchTree()) {
+            logWarning(routineLogResearchLine("Research tree did not open after "
+                    + RESEARCH_ENTRY_ATTEMPTS + " attempts. Planning next run in "
+                    + RESEARCH_ENTRY_RETRY_MINUTES + " minutes."));
+            this.reschedule(LocalDateTime.now().plusMinutes(RESEARCH_ENTRY_RETRY_MINUTES));
             return;
         }
-
-        logDebug(routineLogResearchLine("Pressing Research Center"));
-        tapPoint(researchCenter.getPoint());
-        sleepTask(1000);
-
-
-        RawImageData screenshot = emuManager.captureScreen(EMULATOR_NUMBER);
-
-        if (screenshot != null) {
-            ImageSearchResultData result = emuManager.locatePattern(EMULATOR_NUMBER, screenshot,
-                    TemplatesEnum.SKIP_TUTORIAL_HAND, 80.0);
-            ImageSearchResultData mirrorResult = emuManager.locatePattern(EMULATOR_NUMBER, screenshot,
-                    TemplatesEnum.SKIP_TUTORIAL_HAND_MIRROR, 80.0);
-
-            if ((result != null && result.isFound()) || (mirrorResult != null && mirrorResult.isFound())) {
-                logInfo(routineLogResearchLine("Hand template or mirror detected! Pressing it with offset."));
-                PointData adjustedPoint;
-                if (result != null && result.isFound()) {
-                    PointData handPoint = result.getPoint();
-                    adjustedPoint = new PointData(handPoint.getX() + HAND_CLICK_OFFSET_X_VALUE,
-                            handPoint.getY() + HAND_CLICK_OFFSET_Y_VALUE);
-                } else {
-
-
-                    PointData handPoint = mirrorResult.getPoint();
-                    adjustedPoint = new PointData(handPoint.getX() - HAND_CLICK_OFFSET_X_VALUE,
-                            handPoint.getY() + HAND_CLICK_OFFSET_Y_VALUE);
-                }
-                tapPoint(adjustedPoint);
-                sleepTask(300);
-            }
-        }
-        sleepTask(300);
 
 
         ImageSearchResultData researchTextResult = findResearchInPriorityCategories();
@@ -234,30 +229,13 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 
 
                 if (researchTime != null) {
-                    long minutesToWait = researchTime.toMinutes();
-                    LocalDateTime rescheduleTime;
+                    Duration recheckDelay = ResearchTimerPolicy.recheckDelay(researchTime);
+                    LocalDateTime rescheduleTime = LocalDateTime.now().plus(recheckDelay);
 
-                    if (minutesToWait > 30) {
-                        long halfTime = minutesToWait / 2;
-                        rescheduleTime = LocalDateTime.now().plusMinutes(halfTime);
-                        logInfo(routineLogResearchLine("Research time exceeds 30 minutes (" + minutesToWait
-                                + " min). Planning next run for half time: " +
-                                halfTime + " minutes from now"));
-                    } else if (minutesToWait < 5) {
-                        if (minutesToWait == 0) {
-                            minutesToWait = 1;
-                        }
-                        rescheduleTime = LocalDateTime.now().plusMinutes(minutesToWait);
-                        logInfo(routineLogResearchLine("Research time is less than 5 minutes. Keeping normal schedule: " +
-                                minutesToWait + " minutes from now"));
-                    } else {
-                        if (minutesToWait == 0) {
-                            minutesToWait = 1;
-                        }
-                        rescheduleTime = LocalDateTime.now().plusMinutes(minutesToWait);
-                        logInfo(routineLogResearchLine("Research time is " + minutesToWait + " minutes. Using normal schedule"));
-                    }
-
+                    logInfo(routineLogResearchLine("Research time is "
+                            + formatDuration(researchTime)
+                            + ". Planning next run at half time in "
+                            + formatDuration(recheckDelay) + "."));
                     logInfo(routineLogResearchLine("Research task completed. Planning next run for: " + rescheduleTime));
                     this.reschedule(rescheduleTime);
                     return;
@@ -369,6 +347,103 @@ private void rescheduleShortResearchRetry() {
         this.reschedule(retryAt);
     }
 
+private static String formatDuration(Duration duration) {
+        return String.format("%02d:%02d:%02d",
+                duration.toHours(), duration.toMinutesPart(), duration.toSecondsPart());
+    }
+
+private boolean openResearchTree() {
+        for (int attempt = 1; attempt <= RESEARCH_ENTRY_ATTEMPTS; attempt++) {
+            if (attempt > 1) {
+                pressBack();
+                sleepTask(500);
+                navigationHelper.ensureCorrectScreenLocation(LaunchPoint.HOME);
+                marchHelper.openLeftMenuCitySection(true);
+            }
+
+            ImageSearchResultData researchCenter = templateSearchHelper.locatePattern(
+                    TemplatesEnum.GAME_HOME_SHORTCUTS_RESEARCH_CENTER,
+                    SearchConfigConstants.DEFAULT_SINGLE);
+            if (!isFound(researchCenter)) {
+                logWarning(routineLogResearchLine("Research Center shortcut not detected during entry attempt "
+                        + attempt + "/" + RESEARCH_ENTRY_ATTEMPTS + "."));
+                continue;
+            }
+
+            logDebug(routineLogResearchLine("Pressing Research Center (entry attempt "
+                    + attempt + "/" + RESEARCH_ENTRY_ATTEMPTS + ")"));
+            tapPoint(researchCenter.getPoint());
+            sleepTask(1000);
+
+            PointData handTarget = findResearchEntryHandTarget();
+            if (handTarget == null) {
+                logWarning(routineLogResearchLine("Research entry hand was not detected on attempt "
+                        + attempt + "/" + RESEARCH_ENTRY_ATTEMPTS + "."));
+                continue;
+            }
+
+            logInfo(routineLogResearchLine("Research entry hand detected. Pressing it with offset."));
+            tapPoint(handTarget);
+            sleepTask(300);
+
+            if (isResearchTreeVisible()) {
+                logInfo(routineLogResearchLine("Research tree screen verified."));
+                return true;
+            }
+
+            logWarning(routineLogResearchLine("Research tree title was not detected on attempt "
+                    + attempt + "/" + RESEARCH_ENTRY_ATTEMPTS + "."));
+        }
+        return false;
+    }
+
+private boolean isResearchTreeVisible() {
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                String title = emuManager.readText(
+                        EMULATOR_NUMBER,
+                        RESEARCH_TITLE_TOP_LEFT,
+                        RESEARCH_TITLE_BOTTOM_RIGHT,
+                        RESEARCH_TITLE_OCR).trim();
+                logDebug(routineLogResearchLine("Research tree title OCR: '" + title + "'."));
+                if (title.toLowerCase().contains("research")) {
+                    return true;
+                }
+            } catch (IOException | TesseractException | RuntimeException e) {
+                logDebug(routineLogResearchLine("Research tree title OCR attempt "
+                        + attempt + " failed: " + e.getMessage()));
+            }
+            if (attempt < 3) {
+                sleepTask(300);
+            }
+        }
+        return false;
+    }
+
+private PointData findResearchEntryHandTarget() {
+        RawImageData screenshot = emuManager.captureScreen(EMULATOR_NUMBER);
+        if (screenshot == null) {
+            return null;
+        }
+
+        ImageSearchResultData hand = emuManager.locatePattern(EMULATOR_NUMBER, screenshot,
+                TemplatesEnum.SKIP_TUTORIAL_HAND, 80.0);
+        if (isFound(hand)) {
+            PointData point = hand.getPoint();
+            return new PointData(point.getX() + HAND_CLICK_OFFSET_X_VALUE,
+                    point.getY() + HAND_CLICK_OFFSET_Y_VALUE);
+        }
+
+        ImageSearchResultData mirror = emuManager.locatePattern(EMULATOR_NUMBER, screenshot,
+                TemplatesEnum.SKIP_TUTORIAL_HAND_MIRROR, 80.0);
+        if (isFound(mirror)) {
+            PointData point = mirror.getPoint();
+            return new PointData(point.getX() - HAND_CLICK_OFFSET_X_VALUE,
+                    point.getY() + HAND_CLICK_OFFSET_Y_VALUE);
+        }
+        return null;
+    }
+
 private ImageSearchResultData findResearchInPriorityCategories() {
         List<PriorityItemData> priorities = PriorityConfigResolver.activeRankings(
                 profile, ConfigurationKeyEnum.RESEARCH_PRIORITIES_STRING);
@@ -389,26 +464,15 @@ private ImageSearchResultData findResearchInPriorityCategories() {
             tapCategoryTab(category);
             sleepTask(500);
 
-            if (!findAndTapResearchNode()) {
+            ImageSearchResultData candidate = findStartableResearchNode();
+            if (!isFound(candidate)) {
                 logInfo(routineLogResearchLine("No available tech node in '" + category.label()
                         + "'. Trying next category."));
                 continue;
             }
 
-            sleepTask(1000);
-            RawImageData researchTextScreenshot = emuManager.captureScreen(EMULATOR_NUMBER);
-            ImageSearchResultData candidate = researchTextScreenshot == null ? null
-                    : emuManager.locatePattern(EMULATOR_NUMBER, researchTextScreenshot,
-                            TemplatesEnum.RESEARCH_TEXT, 80.0);
-            if (candidate != null && candidate.isFound()) {
-                logInfo(routineLogResearchLine("'" + category.label() + "' has an available research."));
-                return candidate;
-            }
-
-            logInfo(routineLogResearchLine("'" + category.label()
-                    + "' node did not open a research. Trying next category."));
-            pressBack();
-            sleepTask(500);
+            logInfo(routineLogResearchLine("'" + category.label() + "' has an available research."));
+            return candidate;
         }
         return null;
     }
@@ -421,22 +485,17 @@ private void tapCategoryTab(ResearchCategoryEnum category) {
         }
     }
 
-private boolean findAndTapResearchNode() {
+private ImageSearchResultData findStartableResearchNode() {
         logDebug(routineLogResearchLine("Normalizing research menu with swipes..."));
         for (int i = 0; i < 3; i++) {
             swipe(new PointData(489, 320), new PointData(489, 1156));
             sleepTask(500);
         }
 
-        TemplatesEnum[] researchTemplates = {
-                TemplatesEnum.RESEARCH_0_3,
-                TemplatesEnum.RESEARCH_1_3,
-                TemplatesEnum.RESEARCH_2_3
-        };
-
+        boolean topRowRepositioned = false;
         for (int scrollAttempt = 0; scrollAttempt < MAX_SCROLL_ATTEMPTS_LIMIT; scrollAttempt++) {
             checkPreemption();
-            sleepTask(500);
+            sleepTask(RESEARCH_SCROLL_SETTLE_MILLIS);
 
             RawImageData researchScreenshot = emuManager.captureScreen(EMULATOR_NUMBER);
             if (researchScreenshot == null) {
@@ -444,43 +503,125 @@ private boolean findAndTapResearchNode() {
                 continue;
             }
 
-            List<ImageSearchResultData> foundResults = new ArrayList<>();
-            for (TemplatesEnum template : researchTemplates) {
-                // Single-hit search would return only the single best-correlated occurrence
-                // across the whole screen. An untouched tree renders several nodes with the
-                // identical "X/3" badge at once, so it must find ALL of them here for
-                // "topmost of foundResults" below to actually mean the topmost node on screen
-                // instead of an arbitrary same-looking match.
-                List<ImageSearchResultData> templateResults = emuManager.locateAllPatterns(
-                        EMULATOR_NUMBER, researchScreenshot, template,
-                        new PointData(0, 0), new PointData(720, 1280), 90.0, 10);
-                if (!templateResults.isEmpty()) {
-                    logInfo(routineLogResearchLine("Detected " + templateResults.size()
-                            + " node(s) with template: " + template.name()));
-                    foundResults.addAll(templateResults);
+            List<ResearchRow> rows = ResearchNodeSelectionPolicy.rows(
+                    detectResearchNodes(researchScreenshot));
+            if (!rows.isEmpty()) {
+                logInfo(routineLogResearchLine("Detected " + rows.size()
+                        + " visible incomplete research row(s)."));
+            }
+            if (!rows.isEmpty() && rows.get(0).candidates().get(0).tapPoint().getY() < RESEARCH_SAFE_TAP_Y) {
+                if (topRowRepositioned) {
+                    logWarning(routineLogResearchLine(
+                            "Top incomplete row remains hidden behind the category header; refusing an unsafe tap."));
+                    return null;
+                }
+                logInfo(routineLogResearchLine(
+                        "Top incomplete row is partially hidden; repositioning it below the category header."));
+                swipe(new PointData(489, 400), new PointData(489, 650));
+                topRowRepositioned = true;
+                continue;
+            }
+            topRowRepositioned = false;
+
+            for (ResearchRow row : rows) {
+                boolean centerCapped = false;
+                for (ResearchNode node : row.candidates()) {
+                    PointData tap = node.tapPoint();
+                    logInfo(routineLogResearchLine("Trying row candidate " + node.currentLevel() + "/"
+                            + node.maximumLevel() + " at badge (" + node.badgePoint().getX() + ", "
+                            + node.badgePoint().getY() + "), tap (" + tap.getX() + ", " + tap.getY() + ")."));
+                    tapPoint(tap);
+                    sleepTask(1000);
+
+                    ResearchDialogInspection inspection = inspectResearchDialog();
+                    logInfo(routineLogResearchLine("Candidate result: " + inspection.state()
+                            + ", goButtons=" + inspection.goButtonCount()
+                            + ", requirements='" + inspection.requirementText() + "'."));
+                    if (inspection.state() == ResearchDialogState.STARTABLE) {
+                        return inspection.researchButton();
+                    }
+
+                    pressBack();
+                    sleepTask(500);
+
+                    if (inspection.state() == ResearchDialogState.CENTER_CAPPED) {
+                        centerCapped = true;
+                        break;
+                    }
+                    if (inspection.state() == ResearchDialogState.UNKNOWN) {
+                        logWarning(routineLogResearchLine(
+                                "Research detail state was unknown; refusing to infer availability below it."));
+                        return null;
+                    }
+                }
+
+                if (!centerCapped) {
+                    logInfo(routineLogResearchLine(
+                            "No candidate in the current row had satisfied prerequisites; not skipping the row."));
+                    return null;
+                }
+                if (row.minimumLevel() == 0) {
+                    logInfo(routineLogResearchLine(
+                            "The 0/x frontier is Research-Center-capped; deeper rows cannot be available."));
+                    return null;
                 }
             }
 
-            if (!foundResults.isEmpty()) {
-                ImageSearchResultData highest = foundResults.stream()
-                        .min(Comparator.comparingInt(r -> r.getPoint().getY()))
-                        .get();
-                logInfo(routineLogResearchLine("Pressing research template at position: ("
-                        + highest.getPoint().getX() + ", " + highest.getPoint().getY() + ") with offset"));
-
-                PointData researchPoint = highest.getPoint();
-                tapPoint(new PointData(researchPoint.getX() + RESEARCH_CLICK_OFFSET_X_VALUE,
-                        researchPoint.getY() + RESEARCH_CLICK_OFFSET_Y_VALUE));
-                sleepTask(300);
-                return true;
-            }
-
-            logDebug(routineLogResearchLine("Zero research templates detected, scrolling up (attempt "
+            logDebug(routineLogResearchLine("No startable research in the visible frontier, scrolling down (attempt "
                     + (scrollAttempt + 1) + "/" + MAX_SCROLL_ATTEMPTS_LIMIT + ")"));
             swipe(new PointData(489, 800), new PointData(489, 300));
         }
-        return false;
+        return null;
     }
+
+private List<ResearchNode> detectResearchNodes(RawImageData screenshot) {
+        List<ResearchNode> nodes = new ArrayList<>();
+        try {
+            List<ResearchBadgeData> badges = ResearchBadgeReader.read(
+                    screenshot, RESEARCH_TREE_TOP_LEFT, RESEARCH_TREE_BOTTOM_RIGHT);
+            for (ResearchBadgeData badge : badges) {
+                PointData point = badge.center();
+                nodes.add(new ResearchNode(badge.currentLevel(), badge.maximumLevel(), point));
+                logInfo(routineLogResearchLine("Pattern detected research badge "
+                        + badge.currentLevel() + "/" + badge.maximumLevel() + " at ("
+                        + point.getX() + ", " + point.getY() + "), confidence="
+                        + String.format("%.1f", badge.confidence()) + "."));
+            }
+        } catch (RuntimeException exception) {
+            logWarning(routineLogResearchLine(
+                    "Research badge pattern classification failed: " + exception.getMessage()));
+        }
+        return nodes;
+    }
+
+private ResearchDialogInspection inspectResearchDialog() {
+        RawImageData screenshot = emuManager.captureScreen(EMULATOR_NUMBER);
+        if (screenshot == null) {
+            return new ResearchDialogInspection(ResearchDialogState.UNKNOWN, null, 0, "");
+        }
+
+        ImageSearchResultData researchButton = emuManager.locatePattern(
+                EMULATOR_NUMBER, screenshot, TemplatesEnum.RESEARCH_TEXT, 80.0);
+        int goButtonCount = emuManager.locateAllPatterns(
+                EMULATOR_NUMBER, screenshot, TemplatesEnum.GAME_HOME_SHORTCUTS_GO,
+                RESEARCH_GO_TOP_LEFT, RESEARCH_GO_BOTTOM_RIGHT, 85.0, 4).size();
+        String requirements = "";
+        try {
+            requirements = TesseractOcrProvider.recognizeText(
+                    screenshot, RESEARCH_REQUIREMENTS_TOP_LEFT, RESEARCH_REQUIREMENTS_BOTTOM_RIGHT,
+                    TesseractSettingsData.forTextBlock());
+        } catch (TesseractException | RuntimeException exception) {
+            logWarning(routineLogResearchLine("Research requirement OCR failed: " + exception.getMessage()));
+        }
+        ResearchDialogState state = ResearchDialogClassifier.classify(
+                isFound(researchButton), goButtonCount, requirements);
+        return new ResearchDialogInspection(state, researchButton, goButtonCount, requirements);
+    }
+
+private record ResearchDialogInspection(ResearchDialogState state,
+                                        ImageSearchResultData researchButton,
+                                        int goButtonCount,
+                                        String requirementText) {}
 
 private String routineLogResearchLine(String note) {
         return "ResearchRoutine | " + note;
