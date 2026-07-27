@@ -272,7 +272,10 @@ private void performLimitedTrainingForAppointment(QueueSlot queue) {
                 neededTime.toSecondsPart())));
 
 
-        chooseHighestTroopLevel(troopTypeBeingTrained);
+        if (selectHighestUnlockedTroopLevel(troopTypeBeingTrained) == -1) {
+            logWarning(routineLogTrainingLine("No unlocked troop level confirmed. Skipping limited training."));
+            return;
+        }
 
         emuManager.captureScreen(EMULATOR_NUMBER);
 
@@ -396,17 +399,14 @@ private LocalDateTime extractTrainingCompletionTimeFlow() {
 private void performPromotionPriorityTraining(QueueSlot queue) {
         logInfo(routineLogTrainingLine("Executing promotion-priority training for " + queue.type().name()));
 
-        resetTroopListToEndFlow();
-
-        int maxLevel = locateMaxAvailableTroopLevel(queue.type());
+        int maxLevel = selectHighestUnlockedTroopLevel(queue.type());
 
         if (maxLevel == -1) {
-            logWarning(routineLogTrainingLine("Zero troop levels detected. Falling back to normal training."));
-            pressTrainButton();
+            logWarning(routineLogTrainingLine("No unlocked troop level confirmed. Skipping training."));
             return;
         }
 
-        logInfo(routineLogTrainingLine("Maximum available troop level: " + maxLevel));
+        logInfo(routineLogTrainingLine("Maximum unlocked troop level: " + maxLevel));
         resetTroopListToStartFlow();
 
         boolean promotionExecuted = attemptTroopPromotionsFlow(queue.type(), maxLevel);
@@ -414,7 +414,13 @@ private void performPromotionPriorityTraining(QueueSlot queue) {
         if (promotionExecuted) {
             logInfo(routineLogTrainingLine("Promotion executed finished cleanly."));
         } else {
-            logInfo(routineLogTrainingLine("Zero promotable troops detected. Executing normal training."));
+            logInfo(routineLogTrainingLine("Zero promotable troops detected. Reselecting highest unlocked level for normal training."));
+            int selectedLevel = selectHighestUnlockedTroopLevel(queue.type());
+            if (selectedLevel == -1) {
+                logWarning(routineLogTrainingLine("Could not reselect an unlocked troop level. Skipping normal training."));
+                return;
+            }
+            logInfo(routineLogTrainingLine("Reselected level " + selectedLevel + " for normal training."));
             pressTrainButton();
         }
     }
@@ -441,6 +447,17 @@ private boolean attemptSingleTroopPromotionFlow(TemplatesEnum template) {
                 template,
                 SearchConfigConstants.DEFAULT_SINGLE);
 
+        if (!troop.isFound()) {
+            // The next tier can be just beyond the current five-card viewport. Advancing the list without
+            // retrying that same tier skipped the first promotable card on the newly visible page.
+            logDebug(routineLogTrainingLine("Template not visible before scroll: " + template.name()
+                    + ". Advancing troop list and retrying the same level."));
+            scrollToNextTroopTypeFlow();
+            troop = templateSearchHelper.locatePattern(
+                    template,
+                    SearchConfigConstants.STRICT_MATCHING);
+        }
+
         if (troop.isFound()) {
             tapPoint(troop.getPoint());
             sleepTask(300);
@@ -457,8 +474,7 @@ private boolean attemptSingleTroopPromotionFlow(TemplatesEnum template) {
                 logDebug(routineLogTrainingLine("Promotion not available for: " + template.name()));
             }
         } else {
-            logDebug(routineLogTrainingLine("Template not detected: " + template.name()));
-            scrollToNextTroopTypeFlow();
+            logDebug(routineLogTrainingLine("Template not detected after scroll retry: " + template.name()));
         }
 
         return false;
@@ -521,34 +537,6 @@ private LocalDateTime manageTrainingButtonNotFound(QueueSlot queue) {
 
 
         return null;
-    }
-
-private int locateMaxAvailableTroopLevel(TroopTypeShape troopType) {
-        List<TemplatesEnum> templates = resolveTroopsTemplates(troopType);
-        logDebug(routineLogTrainingLine("Scanning for max level among " + templates.size() + " templates."));
-
-        emuManager.captureScreen(EMULATOR_NUMBER);
-        for (TemplatesEnum template : templates) {
-            ImageSearchResultData troop = templateSearchHelper.locatePattern(
-                    template,
-                    SearchConfigConstants.STRICT_MATCHING);
-
-            if (troop.isFound()) {
-                int level = extractLevelFromTemplateNameFlow(template.name());
-                if (level > 0) {
-                    logInfo(routineLogTrainingLine("Detected highest level: " + level + " (" + template.name() + ")"));
-                    return level;
-                }
-            } else {
-                swipe(TROOP_SCROLL_END_VALUE, TROOP_SCROLL_START_VALUE);
-                sleepTask(200);
-
-                emuManager.captureScreen(EMULATOR_NUMBER);
-            }
-        }
-
-        logWarning(routineLogTrainingLine("Zero troop templates detected."));
-        return -1;
     }
 
 private void trainOptimalTroopCountFlow(Duration trainTime, int maxTroops, Duration neededTime) {
@@ -908,40 +896,51 @@ private QueueSlot inspectForStateKeywords(
         return null;
     }
 
-private void chooseHighestTroopLevel(TroopTypeShape troopType) {
+private int selectHighestUnlockedTroopLevel(TroopTypeShape troopType) {
         List<TemplatesEnum> templates = resolveTroopsTemplates(troopType);
         resetTroopListToEndFlow();
         emuManager.captureScreen(EMULATOR_NUMBER);
-        for (TemplatesEnum template : templates) {
-            ImageSearchResultData troop = templateSearchHelper.locatePattern(
-                    template,
-                    SearchConfigConstants.STRICT_MATCHING);
+        Optional<TemplatesEnum> selected = TrainingTierSelector.findHighestUnlocked(
+                templates,
+                this::probeTroopTier);
 
-            if (troop.isFound()) {
-                tapPoint(troop.getPoint());
-                sleepTask(250);
-
-
-                emuManager.captureScreen(EMULATOR_NUMBER);
-                ImageSearchResultData lockedIndicator = templateSearchHelper.locatePattern(
-                        TRAINING_TROOP_LOCKED,
-                        SearchConfigConstants.DEFAULT_SINGLE);
-                if (lockedIndicator.isFound()) {
-                    logInfo(routineLogTrainingLine("Troop level locked: " + template.name() + ". Continuing search."));
-                    continue;
-                }
-
-                logInfo(routineLogTrainingLine("Selected highest troop level: " + template.name()));
-                return;
-            } else {
-                swipe(TROOP_SCROLL_END_VALUE, TROOP_SCROLL_START_VALUE);
-                sleepTask(200);
-
-                emuManager.captureScreen(EMULATOR_NUMBER);
-            }
+        if (selected.isPresent()) {
+            TemplatesEnum template = selected.get();
+            int level = extractLevelFromTemplateNameFlow(template.name());
+            logInfo(routineLogTrainingLine("Selected highest unlocked troop level: " + level + " (" + template.name() + ")"));
+            return level;
         }
 
-        logWarning(routineLogTrainingLine("Could not select highest troop level."));
+        logWarning(routineLogTrainingLine("Could not select an unlocked troop level."));
+        return -1;
+    }
+
+private TrainingTierSelector.TierState probeTroopTier(TemplatesEnum template) {
+        // Locked grayscale cards retain enough armour detail to match their tier template, so identity
+        // alone cannot prove that a tier is trainable. Confirm the selected card's lock state separately.
+        ImageSearchResultData troop = templateSearchHelper.locatePattern(
+                template,
+                SearchConfigConstants.STRICT_MATCHING);
+
+        if (!troop.isFound()) {
+            swipe(TROOP_SCROLL_END_VALUE, TROOP_SCROLL_START_VALUE);
+            sleepTask(200);
+            emuManager.captureScreen(EMULATOR_NUMBER);
+            return TrainingTierSelector.TierState.NOT_VISIBLE;
+        }
+
+        tapPoint(troop.getPoint());
+        sleepTask(250);
+        emuManager.captureScreen(EMULATOR_NUMBER);
+        ImageSearchResultData lockedIndicator = templateSearchHelper.locatePattern(
+                TRAINING_TROOP_LOCKED,
+                SearchConfigConstants.DEFAULT_SINGLE);
+        if (lockedIndicator.isFound()) {
+            logInfo(routineLogTrainingLine("Troop level locked: " + template.name() + ". Continuing search."));
+            return TrainingTierSelector.TierState.LOCKED;
+        }
+
+        return TrainingTierSelector.TierState.UNLOCKED;
     }
 
 private void trainMaximumTroopsFlow(String trainTimeStr, String neededTimeStr, int maxTroops) {
@@ -1035,8 +1034,11 @@ private void performMaximumTraining(QueueSlot queue) {
         if (!ministryAppointmentEnabled && prioritizePromotion) {
             performPromotionPriorityTraining(queue);
         } else {
-            chooseHighestTroopLevel(troopTypeBeingTrained);
-            pressTrainButton();
+            if (selectHighestUnlockedTroopLevel(troopTypeBeingTrained) != -1) {
+                pressTrainButton();
+            } else {
+                logWarning(routineLogTrainingLine("No unlocked troop level confirmed. Skipping normal training."));
+            }
         }
     }
 
