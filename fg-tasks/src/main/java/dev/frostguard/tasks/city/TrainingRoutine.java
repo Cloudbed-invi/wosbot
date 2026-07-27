@@ -7,6 +7,7 @@ import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.service.ConfigService;
+import dev.frostguard.engine.service.TaskManagementService;
 import dev.frostguard.vision.convert.GameTimeUtils;
 import dev.frostguard.vision.convert.RegexNumberParser;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
@@ -16,6 +17,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.List;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import static dev.frostguard.api.configs.ConfigurationKeyEnum.*;
 import static dev.frostguard.api.configs.TemplatesEnum.*;
 import static dev.frostguard.engine.nav.LeftMenuTextSettings.*;
@@ -1099,14 +1101,55 @@ private boolean manageUpgradingQueues(List<QueueSlot> queues) {
                 .anyMatch(q -> q.status() == QueueMood.UPGRADING);
 
         if (anyUpgrading) {
-            logInfo(routineLogTrainingLine("At least one queue UPGRADING. Planning next run check in " +
-                    UPGRADING_RESCHEDULE_MINUTES_VALUE + " minutes."));
+            LocalDateTime now = LocalDateTime.now();
+            List<LocalDateTime> trainingCompletions = queues.stream()
+                    .filter(q -> q.status() == QueueMood.TRAINING)
+                    .map(QueueSlot::readyAt)
+                    .filter(Objects::nonNull)
+                    .toList();
+            LocalDateTime cityBuildRun = nextCityBuildRun().orElse(null);
+            LocalDateTime constructionCheck = earliestReservationCheck().orElse(null);
+            LocalDateTime nextCheck = selectUpgradingWakeup(
+                    now, trainingCompletions, cityBuildRun, constructionCheck);
 
-            reschedule(LocalDateTime.now().plusMinutes(UPGRADING_RESCHEDULE_MINUTES_VALUE));
+            logInfo(routineLogTrainingLine(
+                    "At least one queue UPGRADING. Planning next run for: "
+                            + nextCheck.format(DATETIME_FORMATTER)
+                            + " (earliest known training/construction event; 10-minute fallback only if unknown)."));
+
+            reschedule(nextCheck);
             return true;
         }
 
         return false;
+    }
+
+private Optional<LocalDateTime> nextCityBuildRun() {
+        if (profile == null || profile.getId() == null) {
+            return Optional.empty();
+        }
+
+        TaskStateData cityBuildState = TaskManagementService.shared().lookupTaskState(
+                profile.getId(), TpDailyTaskEnum.CITY_UPGRADE_FURNACE.getId());
+        if (cityBuildState == null || !cityBuildState.isScheduled()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(cityBuildState.getNextExecutionTime());
+    }
+
+static LocalDateTime selectUpgradingWakeup(
+        LocalDateTime now,
+        Collection<LocalDateTime> trainingCompletions,
+        LocalDateTime cityBuildRun,
+        LocalDateTime constructionCheck) {
+        LocalDateTime fallback = now.plusMinutes(UPGRADING_RESCHEDULE_MINUTES_VALUE);
+        return Stream.concat(
+                        trainingCompletions == null ? Stream.empty() : trainingCompletions.stream(),
+                        Stream.of(cityBuildRun, constructionCheck))
+                .filter(Objects::nonNull)
+                .filter(candidate -> candidate.isAfter(now))
+                .min(LocalDateTime::compareTo)
+                .orElse(fallback);
     }
 
 private List<QueueSlot> filterReadyQueuesFlow(List<QueueSlot> queues) {
