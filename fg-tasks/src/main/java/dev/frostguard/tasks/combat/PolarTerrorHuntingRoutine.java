@@ -359,10 +359,9 @@ private RallyLaunchResult launchSingleRallyFlow(int polarLevel, boolean useFlag,
                     "The formation screen offers Troop Training, so there are no troops to send");
         }
 
-        long travelTimeSeconds = staminaHelper.parseTravelTime();
-        int rallyStaminaCost = staminaHelper.readDeployCost(MAX_POLAR_RALLY_STAMINA_COST);
-        logInfo(routineLogPolarTerrorHuntingLine(String.format(
-                "Deployment read: travelSeconds=%d staminaCost=%d", travelTimeSeconds, rallyStaminaCost)));
+        var deployment = deploymentHelper.readScreen(MAX_POLAR_RALLY_STAMINA_COST);
+        long travelTimeSeconds = deployment.travelTimeSeconds();
+        int rallyStaminaCost = deployment.staminaCost();
 
         ImageSearchResultData deploy = templateSearchHelper.locatePattern(
                 TemplatesEnum.DEPLOY_BUTTON,
