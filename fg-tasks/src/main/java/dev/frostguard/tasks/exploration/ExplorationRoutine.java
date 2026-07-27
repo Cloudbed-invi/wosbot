@@ -8,6 +8,7 @@ import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.api.domain.SizeData;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
@@ -93,7 +94,7 @@ public class ExplorationRoutine extends DelayedTask {
 			logInfo(routineLogExplorationLine(String.format(
 					"Enabled claim button detected at %s with score %.2f. Pressing attempt %d/%d.",
 					claimResult.getPoint(), claimResult.getMatchPercentage(), attempt, MAX_CLAIM_TAP_ATTEMPTS)));
-			tapPoint(claimResult.getPoint());
+			tapClaimButton(claimResult);
 			sleepTask(800);
 			dismissRewardPopup();
 
@@ -131,6 +132,23 @@ public class ExplorationRoutine extends DelayedTask {
 	private ImageSearchResultData locateDisabledClaimButton() {
 		return templateSearchHelper.locatePattern(
 				TemplatesEnum.EXPLORATION_CLAIM_DISABLED, SearchConfigConstants.SINGLE_WITH_2_RETRIES);
+	}
+
+	private void tapClaimButton(ImageSearchResultData claimResult) {
+		SizeData templateSize = claimResult.getTemplateSize();
+		if (templateSize == null || templateSize.getWidth() <= 0 || templateSize.getHeight() <= 0) {
+			tapPoint(claimResult.getPoint());
+			return;
+		}
+
+		PointData center = claimResult.getPoint();
+		PointData topLeft = new PointData(
+				center.getX() - templateSize.getWidth() / 2,
+				center.getY() - templateSize.getHeight() / 2);
+		PointData bottomRight = new PointData(
+				center.getX() + templateSize.getWidth() / 2,
+				center.getY() + templateSize.getHeight() / 2);
+		tapRandomPoint(topLeft, bottomRight);
 	}
 
 	private void dismissRewardPopup() {

@@ -25,6 +25,7 @@ import org.opencv.imgproc.Imgproc;
 import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.RawImageData;
+import dev.frostguard.api.domain.SizeData;
 import dev.frostguard.api.configs.TemplatesEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,6 +64,10 @@ public class OpenCvPatternLocator {
     /** Raw bytes read from the classpath (avoids re-reading the JAR). */
     private static final ConcurrentHashMap<String, byte[]> rawBytesStore =
             new ConcurrentHashMap<>();
+
+    private static ImageSearchResultData hitWithTemplateSize(PointData point, double score, int width, int height) {
+        return new ImageSearchResultData(true, point, score, new SizeData(width, height));
+    }
 
     /* ------------------------------------------------------------------ */
     /*  Thread pool & lifecycle                                            */
@@ -263,7 +268,7 @@ public class OpenCvPatternLocator {
             int centerY = bestY + clipY + bestH / 2;
             log.info("=== Pattern Correlation Completed === Pattern: {} (multi-scale), Total: {} ms, Match: {}%, Scale: {}, Position: ({},{})",
                     spriteLabel, totalTime, String.format("%.2f", scorePct), String.format("%.2f", bestScale), centerX, centerY);
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), scorePct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), scorePct, bestW, bestH);
 
         } catch (Exception e) {
             log.error(tagged("Exception during multi-scale correlation"), e);
@@ -413,7 +418,7 @@ public class OpenCvPatternLocator {
             int centerY = (int) (mmr.maxLoc.y + roi.y + template.rows() / 2.0);
             log.info(tagged("Custom template (bytes): FOUND at (" + centerX + "," + centerY
                     + ") match: " + String.format("%.2f", matchPct) + "%"));
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), matchPct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), matchPct, template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("matchFromSuppliedBytes: exception during search"), e);
@@ -500,7 +505,7 @@ public class OpenCvPatternLocator {
 
             int centerX = (int) (mmr.maxLoc.x + roi.x + grayTemplate.cols() / 2.0);
             int centerY = (int) (mmr.maxLoc.y + roi.y + grayTemplate.rows() / 2.0);
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), matchPct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), matchPct, template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("matchFromSuppliedBytesMono: exception during search"), e);
@@ -809,7 +814,8 @@ public class OpenCvPatternLocator {
             log.debug("=== Pattern Correlation Completed === Pattern: {}, Total: {} ms, Match: {}%, Position: ({},{})",
                     spriteLabel, totalTime, String.format("%.2f", scorePct), (int) centerX, (int) centerY);
 
-            return new ImageSearchResultData(true, new PointData((int) centerX, (int) centerY), scorePct);
+            return hitWithTemplateSize(new PointData((int) centerX, (int) centerY), scorePct,
+                    template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("Exception during pattern correlation"), e);
@@ -986,7 +992,7 @@ public class OpenCvPatternLocator {
 
             int centerX = (int) (mmr.maxLoc.x + clipX + template.cols() / 2.0);
             int centerY = (int) (mmr.maxLoc.y + clipY + template.rows() / 2.0);
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), matchPct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), matchPct, template.cols(), template.rows());
 
         } finally {
             if (roiSlice != null)
@@ -1086,8 +1092,8 @@ public class OpenCvPatternLocator {
                 double centerX = bestPos.x + roi.x + halfSpriteW;
                 double centerY = bestPos.y + roi.y + halfSpriteH;
 
-                results.add(new ImageSearchResultData(true,
-                        new PointData((int) centerX, (int) centerY), score * 100.0));
+                results.add(hitWithTemplateSize(new PointData((int) centerX, (int) centerY),
+                        score * 100.0, sprW, sprH));
 
                 // Optimized suppression
                 int supX = Math.max(0, (int) bestPos.x - halfSpriteW);
@@ -1198,7 +1204,8 @@ public class OpenCvPatternLocator {
             double centerX = bestPos.x + roi.x + (template.cols() / 2.0);
             double centerY = bestPos.y + roi.y + (template.rows() / 2.0);
 
-            return new ImageSearchResultData(true, new PointData((int) centerX, (int) centerY), scorePct);
+            return hitWithTemplateSize(new PointData((int) centerX, (int) centerY), scorePct,
+                    template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("Exception during pattern correlation"), e);
@@ -1301,7 +1308,7 @@ public class OpenCvPatternLocator {
             int centerX = (int) (mmr.maxLoc.x + (double) template.cols() / 2 + clipX);
             int centerY = (int) (mmr.maxLoc.y + (double) template.rows() / 2 + clipY);
 
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), scorePct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), scorePct, template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("Exception during mono pattern correlation"), e);
@@ -1408,8 +1415,8 @@ public class OpenCvPatternLocator {
                 double centerX = bestPos.x + roi.x + halfSpriteW;
                 double centerY = bestPos.y + roi.y + halfSpriteH;
 
-                results.add(new ImageSearchResultData(true,
-                        new PointData((int) centerX, (int) centerY), score * 100.0));
+                results.add(hitWithTemplateSize(new PointData((int) centerX, (int) centerY),
+                        score * 100.0, sprW, sprH));
 
                 // Optimized suppression
                 int supX = Math.max(0, (int) bestPos.x - halfSpriteW);
@@ -1527,7 +1534,7 @@ public class OpenCvPatternLocator {
             int centerX = (int) (mmr.maxLoc.x + (double) template.cols() / 2 + clipX);
             int centerY = (int) (mmr.maxLoc.y + (double) template.rows() / 2 + clipY);
 
-            return new ImageSearchResultData(true, new PointData(centerX, centerY), scorePct);
+            return hitWithTemplateSize(new PointData(centerX, centerY), scorePct, template.cols(), template.rows());
 
         } catch (Exception e) {
             log.error(tagged("Exception during mono pattern correlation with raw data"), e);
@@ -1634,8 +1641,8 @@ public class OpenCvPatternLocator {
                 double centerX = bestPos.x + roi.x + halfSpriteW;
                 double centerY = bestPos.y + roi.y + halfSpriteH;
 
-                results.add(new ImageSearchResultData(true,
-                        new PointData((int) centerX, (int) centerY), score * 100.0));
+                results.add(hitWithTemplateSize(new PointData((int) centerX, (int) centerY),
+                        score * 100.0, sprW, sprH));
 
                 // Optimized suppression
                 int supX = Math.max(0, (int) bestPos.x - halfSpriteW);
@@ -1750,8 +1757,8 @@ public class OpenCvPatternLocator {
                 double centerX = bestPos.x + roi.x + halfSpriteW;
                 double centerY = bestPos.y + roi.y + halfSpriteH;
 
-                results.add(new ImageSearchResultData(true,
-                        new PointData((int) centerX, (int) centerY), score * 100.0));
+                results.add(hitWithTemplateSize(new PointData((int) centerX, (int) centerY),
+                        score * 100.0, sprW, sprH));
 
                 // Optimized suppression
                 int supX = Math.max(0, (int) bestPos.x - halfSpriteW);
@@ -1914,5 +1921,5 @@ public class OpenCvPatternLocator {
             return -1L;
         }
     }
-}
 
+}
