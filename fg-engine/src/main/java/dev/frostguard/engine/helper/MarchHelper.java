@@ -72,6 +72,18 @@ public class MarchHelper {
     public List<MarchSlotState> readMarchQueue() {
         openLeftMenuCitySection(false);
         try {
+            return readVisibleMarchQueue();
+        } finally {
+            dismissLeftPanel();
+        }
+    }
+
+    /**
+     * Reads the already-open wilderness March Queue panel without changing its state. This is for
+     * workflows such as Intel recall that must inspect rows and then interact with the same panel.
+     */
+    public List<MarchSlotState> readVisibleMarchQueue() {
+        try {
             RawImageData frame = emu.captureScreen(device);
             BufferedImage image = TesseractOcrProvider.toBufferedImage(frame);
 
@@ -91,8 +103,6 @@ public class MarchHelper {
         } catch (Exception ex) {
             log.error("March queue read error: " + ex.getMessage());
             return List.of();
-        } finally {
-            dismissLeftPanel();
         }
     }
 
