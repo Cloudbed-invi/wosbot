@@ -65,7 +65,7 @@ public class BeastSlayRoutine extends DelayedTask {
 		int minToAct = staminaReserve + STAMINA_COST_PER_ATTACK;
 
 		// Use staminaHelper to check stamina (already read during initialization/validation)
-		if (!staminaHelper.checkStaminaAndMarchesOrReschedule(minToAct, minToAct, this::reschedule)) {
+		if (!staminaHelper.checkStaminaAndMarchesOrReschedule(minToAct, minToAct, this)) {
 			return;
 		}
 

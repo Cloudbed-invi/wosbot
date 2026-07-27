@@ -5,6 +5,7 @@ import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.engine.emulator.EmulatorController;
 import dev.frostguard.engine.nav.CommonGameAreas;
 import dev.frostguard.engine.nav.CommonOCRSettings;
+import dev.frostguard.engine.schedule.StaminaWaitScheduler;
 import dev.frostguard.engine.service.LoggingService;
 import dev.frostguard.engine.service.StaminaService;
 import dev.frostguard.vision.convert.GameTimeUtils;
@@ -18,11 +19,6 @@ import java.time.LocalDateTime;
 // Orchestrates stamina tracking: OCR reads, regen delay computation,
 // availability gating, item top-ups, and travel time parsing.
 public class StaminaHelper {
-
-    @FunctionalInterface
-    public interface RescheduleCallback {
-        void reschedule(LocalDateTime time);
-    }
 
     private final EmulatorController device;
     private final String deviceSlot;
@@ -271,41 +267,41 @@ public class StaminaHelper {
 
     // Computes minutes needed for stamina to regenerate from current to target.
     public int staminaRegenerationTime(int current, int target) {
-        if (current >= target) return 0;
-        int deficit = target - current;
-        int waitMinutes = deficit * 5;
-        emitDebug(deficit + " points deficit → " + waitMinutes + " min wait");
+        int waitMinutes = Math.toIntExact(StaminaService.minutesToRegenerate(current, target));
+        if (waitMinutes > 0) {
+            emitDebug((target - current) + " points deficit → " + waitMinutes + " min wait");
+        }
         return waitMinutes;
     }
 
     // Validates stamina and optionally march slots; reschedules on failure.
     // If verifyMarches is true, also checks march availability.
     public boolean checkStaminaAndMarchesOrReschedule(
-            int min, int refresh, RescheduleCallback cb) {
-        return verifyReadiness(min, refresh, cb, true);
+            int min, int refresh, StaminaWaitScheduler scheduler) {
+        return verifyReadiness(min, refresh, scheduler, true);
     }
 
     public boolean checkStaminaOrReschedule(
-            int min, int refresh, RescheduleCallback cb) {
-        return verifyReadiness(min, refresh, cb, false);
+            int min, int refresh, StaminaWaitScheduler scheduler) {
+        return verifyReadiness(min, refresh, scheduler, false);
     }
 
     private boolean verifyReadiness(int min, int refresh,
-                                    RescheduleCallback cb, boolean verifyMarches) {
+                                    StaminaWaitScheduler scheduler, boolean verifyMarches) {
         int level = persistence.getCurrentStamina(accountKey);
         emitInfo("Stamina check: " + level);
 
         if (level < min) {
             int regenMinutes = staminaRegenerationTime(level, refresh);
             LocalDateTime retry = LocalDateTime.now().plusMinutes(regenMinutes);
-            cb.reschedule(retry);
-                emitWarn("Insufficient (" + level + "/" + min + ") - retry " +
+            scheduler.deferForStamina(min, refresh, retry);
+            emitWarn("Insufficient (" + level + "/" + min + ") - retry " +
                     GameTimeUtils.formatCountdown(retry));
             return false;
         }
 
         if (verifyMarches && !marchSupport.checkMarchesAvailable()) {
-            cb.reschedule(LocalDateTime.now().plusMinutes(1));
+            scheduler.reschedule(LocalDateTime.now().plusMinutes(1));
             emitWarn("No march slots - retry in 1 min");
             return false;
         }

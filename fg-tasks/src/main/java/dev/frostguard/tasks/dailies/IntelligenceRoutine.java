@@ -986,9 +986,10 @@ private boolean hasEnoughStaminaFlow() {
 		if (staminaValue < MIN_STAMINA_REQUIRED_FLOOR) {
 			logWarning(routineLogIntelligenceLine("Not enough stamina to process intel. Current stamina: " + staminaValue +
 					". Required: " + MIN_STAMINA_REQUIRED_FLOOR + "."));
-			long minutesToRegen = (long) (MIN_STAMINA_REQUIRED_FLOOR - staminaValue) * 5L;
+			long minutesToRegen = StaminaService.minutesToRegenerate(
+					staminaValue, MIN_STAMINA_REQUIRED_FLOOR);
 			LocalDateTime rescheduleTime = LocalDateTime.now().plusMinutes(minutesToRegen);
-			reschedule(rescheduleTime);
+			deferForStamina(MIN_STAMINA_REQUIRED_FLOOR, MIN_STAMINA_REQUIRED_FLOOR, rescheduleTime);
 			return false;
 		}
 		return true;

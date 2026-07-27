@@ -267,11 +267,13 @@ private record RallyLaunchResult(RallyLaunchOutcome outcome, String detail) {
             LocalDateTime staminaReadyAt = LocalDateTime.now().plusMinutes(
                     staminaHelper.staminaRegenerationTime(staminaHelper.getCurrentStamina(), refreshStaminaLevel));
             if (staminaReadyAt.isAfter(nextRun)) {
+                LocalDateTime marchReadyAt = nextRun;
                 logInfo(routineLogPolarTerrorHuntingLine(String.format(
                         "Stamina runs out before the march returns; delaying the next run from %s to %s",
                         GameTimeUtils.formatCountdown(nextRun),
                         GameTimeUtils.formatCountdown(staminaReadyAt))));
                 nextRun = staminaReadyAt;
+                deferForStamina(requiredStaminaForRally(), refreshStaminaLevel, nextRun, marchReadyAt);
             }
         }
 
@@ -510,7 +512,7 @@ private void rescheduleForStaminaRegen() {
         logInfo(routineLogPolarTerrorHuntingLine(String.format(
                 "Stamina gate: waiting %d min for regeneration from %d to %d",
                 waitMinutes, current, refreshStaminaLevel)));
-        reschedule(retryAt);
+        deferForStamina(requiredStaminaForRally(), refreshStaminaLevel, retryAt);
     }
 
 private void rescheduleForStaminaTopUpRetry(StaminaTopUpResult result) {

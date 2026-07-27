@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit;
 // Foundation class for all game automation tasks. Provides scheduling
 // primitives, profile lifecycle, helper wiring, screen-state validation,
 // emulator shortcuts, and cooperative preemption/injection.
-public abstract class DelayedTask implements Runnable, Delayed {
+public abstract class DelayedTask implements Runnable, Delayed, StaminaWaitScheduler {
 
     // ── core fields ─────────────────────────────────────────────────
     protected volatile boolean recurring = true;
@@ -54,6 +54,7 @@ public abstract class DelayedTask implements Runnable, Delayed {
     private Integer customPriority = null;
     private int repeatIntervalMinutes = 0;
     private String customTaskIdentifier;
+    private volatile StaminaDeferral staminaDeferral;
 
     // ── services ────────────────────────────────────────────────────
     protected EmulatorController emuManager = EmulatorController.getInstance();
@@ -163,6 +164,7 @@ public abstract class DelayedTask implements Runnable, Delayed {
 
     @Override
     public void run() {
+        staminaDeferral = null;
         refreshProfileFromDb();
         boolean switchedProfileOnEmulator = markAndDetectProfileSwitchFlow();
         if (switchedProfileOnEmulator) {
@@ -453,6 +455,28 @@ public abstract class DelayedTask implements Runnable, Delayed {
 
     public void clearSchedule() {
         scheduledTime = null;
+    }
+
+    @Override
+    public void deferForStamina(
+            int minimumRequired,
+            int regenerationTarget,
+            LocalDateTime retryAt,
+            LocalDateTime earliestRunnableAt) {
+        staminaDeferral = new StaminaDeferral(minimumRequired, regenerationTarget, earliestRunnableAt);
+        reschedule(retryAt);
+    }
+
+    public StaminaDeferral getStaminaDeferral() {
+        return staminaDeferral;
+    }
+
+    public void restoreStaminaDeferral(StaminaDeferral deferral) {
+        staminaDeferral = deferral;
+    }
+
+    public void clearStaminaDeferral() {
+        staminaDeferral = null;
     }
 
     @Override
