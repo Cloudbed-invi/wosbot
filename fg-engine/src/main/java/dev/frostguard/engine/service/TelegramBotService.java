@@ -55,6 +55,8 @@ import java.util.ArrayList;
  */
 public class TelegramBotService implements BotStateListener {
 
+    static final String CURRENT_LOG_PATH = "log/frostguard.log";
+
     private static final Logger logger = LoggerFactory.getLogger(TelegramBotService.class);
     private static final String API_BASE = "https://api.telegram.org/bot";
 
@@ -292,7 +294,7 @@ public class TelegramBotService implements BotStateListener {
                 + "`/screenshot`  — Capture & send emulator screen\n"
                 + "`/queue`       — Task queue (schedule / remove / run)\n"
                 + "`/stats`       — Bot activity statistics per profile\n"
-                + "`/logs`        — Download log files (bot.log / CleanBot.log)\n"
+                + "`/logs`        — Download the Frostguard log\n"
                 + "`/profiles`    — View & toggle profiles on/off\n"
                 + "\n"
                 + "❓ *Help*\n"
@@ -744,6 +746,9 @@ public class TelegramBotService implements BotStateListener {
     private List<TaskEntry> buildTaskEntries(long profileId, TaskQueue queue) {
         List<TaskEntry> list = new ArrayList<>();
         for (TpDailyTaskEnum task : TpDailyTaskEnum.values()) {
+            if (!isStandardQueueTask(task)) {
+                continue;
+            }
             TaskStateData state = TaskManagementService.shared().lookupTaskState(profileId, task.getId());
             boolean scheduled = (queue != null) && queue.isTaskQueued(task);
             boolean executing = (state != null) && state.isExecuting();
@@ -763,6 +768,10 @@ public class TelegramBotService implements BotStateListener {
             return a.taskEnum.getName().compareTo(b.taskEnum.getName());
         });
         return list;
+    }
+
+    static boolean isStandardQueueTask(TpDailyTaskEnum task) {
+        return task != TpDailyTaskEnum.CUSTOM_TASK;
     }
 
     // ── Callback handling ─────────────────────────────────────────────────────
@@ -842,17 +851,8 @@ public class TelegramBotService implements BotStateListener {
                     handleProfileToggleCallback(callbackId, chatId, messageId, Long.parseLong(parts[1]));
                 }
                 case "log_dl" -> {
-                    if (parts.length < 2) {
-                        answerCallbackQuery(callbackId, "");
-                        return;
-                    }
                     answerCallbackQuery(callbackId, "📥 Downloading...");
-                    String type = parts[1];
-                    String path = "log/bot.log";
-                    if ("clean".equals(type)) {
-                        path = "log/CleanBot.log";
-                    }
-                    sendDocument(chatId, path);
+                    sendDocument(chatId, CURRENT_LOG_PATH);
                 }
                 default -> answerCallbackQuery(callbackId, "");
             }
@@ -1199,8 +1199,9 @@ public class TelegramBotService implements BotStateListener {
         ArrayNode kb = objectMapper.createArrayNode();
         ArrayNode row = objectMapper.createArrayNode();
 
-        row.add(objectMapper.createObjectNode().put("text", "📄 bot.log").put("callback_data", "log_dl:bot"));
-        row.add(objectMapper.createObjectNode().put("text", "🧹 CleanBot.log").put("callback_data", "log_dl:clean"));
+        row.add(objectMapper.createObjectNode()
+                .put("text", "📄 frostguard.log")
+                .put("callback_data", "log_dl"));
         kb.add(row);
 
         ObjectNode markup = objectMapper.createObjectNode();
@@ -1401,4 +1402,3 @@ public class TelegramBotService implements BotStateListener {
         }
     }
 }
-
