@@ -214,7 +214,7 @@
 
 | Requirement | Version | Download |
 |:-----------:|:-------:|:--------:|
-| ![Java](https://img.shields.io/badge/Java_JDK-ED8B00?style=flat-square&logo=openjdk&logoColor=white) | `17` or newer | **[Adoptium Temurin](https://adoptium.net/)** |
+| ![Java](https://img.shields.io/badge/Java_JDK-ED8B00?style=flat-square&logo=openjdk&logoColor=white) | `21` | **[Adoptium Temurin](https://adoptium.net/)** |
 | ![Maven](https://img.shields.io/badge/Apache_Maven-C71A36?style=flat-square&logo=apache-maven&logoColor=white) | `3.8+` | **[Download Maven](https://maven.apache.org/install.html)** |
 
 </div>
@@ -228,7 +228,7 @@
 3. Under **System variables**, select `Path` and click **Edit**
 4. Add the `bin` directories of your Java and Maven installations:
    ```
-   C:\Program Files\Eclipse Adoptium\jdk-17\bin
+   C:\Program Files\Eclipse Adoptium\jdk-21\bin
    C:\apache-maven-3.9.9\bin
    ```
 5. Click **OK** and restart your terminal
@@ -529,4 +529,3 @@ Any contributions you make are **greatly appreciated**.
 </div>
 
 <!-- SEO Keywords: Whiteout Survival Automation, Frostguard, Whiteout Survival Macro, Whiteout Survival Auto Script, Open Source Automation, Auto Join Rallies, Whiteout Survival PC Bot, Auto Farm, Whiteout Survival Helper, Multi Account Bot -->
-
