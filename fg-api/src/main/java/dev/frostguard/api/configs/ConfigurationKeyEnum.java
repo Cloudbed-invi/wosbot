@@ -39,6 +39,7 @@ public enum ConfigurationKeyEnum {
     ALLIANCE_CHAMPIONSHIP_MARKSMANS_PERCENTAGE_INT      ("30",      Integer.class,  ConfigCategory.ALLIANCE),
     ALLIANCE_CHAMPIONSHIP_OVERRIDE_DEPLOY_BOOL          ("false",   Boolean.class,  ConfigCategory.ALLIANCE),
     ALLIANCE_CHAMPIONSHIP_POSITION_STRING               ("CENTER",  String.class,   ConfigCategory.ALLIANCE),
+    ALLIANCE_CHAMPIONSHIP_FLAG_STRING                   ("No Flag", String.class,   ConfigCategory.ALLIANCE),
     ALLIANCE_AUTOJOIN_BOOL                              ("false",   Boolean.class,  ConfigCategory.ALLIANCE),
     ALLIANCE_AUTOJOIN_QUEUES_INT                        ("1",       Integer.class,  ConfigCategory.ALLIANCE),
     ALLIANCE_AUTOJOIN_USE_ALL_TROOPS_BOOL               ("true",    Boolean.class,  ConfigCategory.ALLIANCE),
