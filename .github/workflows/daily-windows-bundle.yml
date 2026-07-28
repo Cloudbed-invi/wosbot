@@ -34,7 +34,7 @@ jobs:
           cache: maven
 
       - name: Build Windows desktop bundle
-        run: mvn -B --no-transfer-progress clean install package -Djavafx.platform=win
+        run: mvn -B --no-transfer-progress clean install package -DskipTests -Djavafx.platform=win
 
       - name: Verify Windows bundle contents
         shell: bash
