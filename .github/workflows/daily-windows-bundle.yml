@@ -1,0 +1,71 @@
+name: Daily Windows Bundle
+
+on:
+  push:
+    branches:
+      - "ci/**"
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-windows-bundle
+  cancel-in-progress: false
+
+jobs:
+  build-windows-bundle:
+    name: Build Windows desktop bundle on Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build Windows desktop bundle
+        run: mvn -B --no-transfer-progress clean install package -Djavafx.platform=win
+
+      - name: Verify Windows bundle contents
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          zip_path="$(find fg-app/target -maxdepth 1 -type f -name '*-desktop-bundle.zip' | sort | tail -n 1)"
+          if [[ -z "${zip_path}" ]]; then
+            echo "No desktop bundle ZIP found under fg-app/target." >&2
+            exit 1
+          fi
+
+          unzip -l "${zip_path}" > /tmp/frostguard-windows-bundle.txt
+
+          grep -Eq 'lib/javafx-base-[^/]+-win\.jar' /tmp/frostguard-windows-bundle.txt
+          grep -Eq 'lib/javafx-controls-[^/]+-win\.jar' /tmp/frostguard-windows-bundle.txt
+          grep -Eq 'lib/javafx-fxml-[^/]+-win\.jar' /tmp/frostguard-windows-bundle.txt
+          grep -Eq 'lib/javafx-graphics-[^/]+-win\.jar' /tmp/frostguard-windows-bundle.txt
+          grep -Eq 'lib/adb/adb\.exe' /tmp/frostguard-windows-bundle.txt
+          grep -Eq 'frostguard-[^/]+\.jar' /tmp/frostguard-windows-bundle.txt
+
+          if grep -Eq 'lib/javafx-[^/]+-linux\.jar' /tmp/frostguard-windows-bundle.txt; then
+            echo "Bundle contains Linux JavaFX runtime JARs." >&2
+            exit 1
+          fi
+
+          echo "FROSTGUARD_WINDOWS_BUNDLE=${zip_path}" >> "${GITHUB_ENV}"
+
+      - name: Upload Windows desktop bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: frostguard-windows-desktop-bundle
+          path: ${{ env.FROSTGUARD_WINDOWS_BUNDLE }}
+          if-no-files-found: error
