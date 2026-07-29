@@ -22,7 +22,7 @@ class ResearchActionPatternEvidenceTest {
     @BeforeAll
     static void loadOpenCv() throws IOException {
         try {
-            OpenCvPatternLocator.extractAndLoadNative("/native/opencv/opencv_java4110.dll");
+            OpenCvPatternLocator.loadNativeLibrary();
         } catch (UnsatisfiedLinkError ignored) {
             // The app and other frame tests may already have loaded OpenCV in this JVM.
         }

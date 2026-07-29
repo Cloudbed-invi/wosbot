@@ -25,7 +25,7 @@ class ResearchBadgeReaderFrameTest {
     @BeforeAll
     static void loadOpenCv() throws IOException {
         try {
-            OpenCvPatternLocator.extractAndLoadNative("/native/opencv/opencv_java4110.dll");
+            OpenCvPatternLocator.loadNativeLibrary();
         } catch (UnsatisfiedLinkError ignored) {
             // Another saved-frame test may already have loaded OpenCV in this JVM.
         }
