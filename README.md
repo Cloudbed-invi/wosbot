@@ -208,6 +208,23 @@
 
 <br/>
 
+### ⚡ Prefer a ready-made build?
+
+A Windows desktop bundle is built automatically every night and after every pull
+request, so you can test the latest code without installing Java or Maven.
+
+1. Open the **[Actions tab](../../actions/workflows/daily-windows-bundle.yml)**
+2. Click the most recent green **Daily Windows Bundle** run
+3. Download the **`frostguard-windows-desktop-bundle-<version>`** artifact
+4. Extract it anywhere and run `frostguard-<version>.jar`
+
+> [!IMPORTANT]
+> GitHub requires you to be **signed in** to download workflow artifacts, and
+> they are retained for **14 days**. Every bundle is verified in CI (structure,
+> classpath, and a real launch smoke test) before it is published.
+
+<br/>
+
 ### 1️⃣ Prerequisites
 
 <div align="center">
@@ -274,6 +291,19 @@ fg-build.bat
 - ✅ Displays clear success/error messages
 
 This script is especially useful after code changes or when local packaging occasionally fails due to transient file-lock/resource-copy issues.
+
+<br/>
+
+#### Verifying a build the way CI does
+
+The same checks that guard the nightly bundle can be run locally on Windows,
+Linux or macOS. See **[`ci/README.md`](ci/README.md)** for details.
+
+```sh
+mvn clean install -Djavafx.platform=win
+python3 ci/verify_bundle.py fg-app/target/frostguard-*-desktop-bundle.zip
+ci/smoke_test_bundle.sh fg-app/target/frostguard-*-desktop-bundle.zip
+```
 
 <br/>
 

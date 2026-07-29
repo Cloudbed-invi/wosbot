@@ -1850,6 +1850,9 @@ public class OpenCvPatternLocator {
                 spriteStore.size(), TemplatesEnum.values().length, rawBytesStore.size());
     }
 
+    /** Classpath location of the Windows OpenCV native image shipped with the app. */
+    public static final String WINDOWS_NATIVE_RESOURCE = "/native/opencv/opencv_java4110.dll";
+
     /** Guards {@link #loadNativeLibrary} so the native image is bound at most once. */
     private static final Object nativeLoadLock = new Object();
 
@@ -1876,8 +1879,15 @@ public class OpenCvPatternLocator {
      * instead, so headless Linux and macOS environments — most importantly CI —
      * get a working OpenCV without needing a Windows binary.</p>
      *
+     * <p>If the bundled Windows image cannot be loaded — the usual cause is a
+     * clone made without Git LFS, which leaves a ~130 byte pointer stub in place
+     * of the 52&nbsp;MB DLL — the openpnp Windows image is used as a fallback so
+     * the application still starts instead of dying during bootstrap.</p>
+     *
      * <p>The call is idempotent and safe to invoke from several threads: the
      * first successful load wins and subsequent invocations return immediately.</p>
+     *
+     * @throws IOException if no native image could be bound on this platform
      */
     public static void loadNativeLibrary() throws IOException {
         if (nativeLoaded) {
@@ -1887,21 +1897,34 @@ public class OpenCvPatternLocator {
             if (nativeLoaded) {
                 return;
             }
+
             if (isWindows()) {
-                extractAndLoadNative(WINDOWS_NATIVE_RESOURCE);
-            } else {
-                // The openpnp OpenCV artifact ships the Linux/macOS images; let it
-                // pick and load the one matching this OS and CPU architecture.
-                nu.pattern.OpenCV.loadLocally();
-                log.info(tagged("Loaded OpenCV native image for "
-                        + System.getProperty("os.name") + " from the openpnp artifact"));
+                try {
+                    extractAndLoadNative(WINDOWS_NATIVE_RESOURCE);
+                    nativeLoaded = true;
+                    return;
+                } catch (IOException | UnsatisfiedLinkError bundledImageFailure) {
+                    log.warn(tagged("Bundled Windows OpenCV image could not be loaded ("
+                            + bundledImageFailure.getMessage()
+                            + "). Falling back to the openpnp artifact. If this is a "
+                            + "source clone, run 'git lfs pull' to fetch the real DLL."));
+                }
             }
+
+            // The openpnp OpenCV artifact ships images for Windows, Linux and
+            // macOS; let it pick the one matching this OS and CPU architecture.
+            try {
+                nu.pattern.OpenCV.loadLocally();
+            } catch (RuntimeException | UnsatisfiedLinkError openpnpFailure) {
+                throw new IOException("No OpenCV native image could be loaded for "
+                        + System.getProperty("os.name") + " / "
+                        + System.getProperty("os.arch"), openpnpFailure);
+            }
+            log.info(tagged("Loaded OpenCV native image for "
+                    + System.getProperty("os.name") + " from the openpnp artifact"));
             nativeLoaded = true;
         }
     }
-
-    /** Classpath location of the Windows OpenCV native image shipped with the app. */
-    public static final String WINDOWS_NATIVE_RESOURCE = "/native/opencv/opencv_java4110.dll";
 
     /**
      * Extracts a bundled native library from the classpath into
