@@ -1850,6 +1850,82 @@ public class OpenCvPatternLocator {
                 spriteStore.size(), TemplatesEnum.values().length, rawBytesStore.size());
     }
 
+    /** Classpath location of the Windows OpenCV native image shipped with the app. */
+    public static final String WINDOWS_NATIVE_RESOURCE = "/native/opencv/opencv_java4110.dll";
+
+    /** Guards {@link #loadNativeLibrary} so the native image is bound at most once. */
+    private static final Object nativeLoadLock = new Object();
+
+    /** {@code true} once an OpenCV native image has been bound into this JVM. */
+    private static volatile boolean nativeLoaded = false;
+
+    /**
+     * Returns {@code true} when the host OS is Windows, i.e. when the bundled
+     * {@code .dll} shipped inside {@code fg-vision} is the correct native image.
+     */
+    private static boolean isWindows() {
+        String os = System.getProperty("os.name", "");
+        return os.toLowerCase(java.util.Locale.ROOT).contains("win");
+    }
+
+    /**
+     * Binds the OpenCV native image for the current operating system, if it has
+     * not been bound already.
+     *
+     * <p>On Windows the {@code .dll} bundled inside {@code fg-vision} is
+     * extracted next to the application and loaded, which is what the shipped
+     * desktop bundle relies on. On every other platform the matching native
+     * image packaged inside the {@code org.openpnp:opencv} artifact is loaded
+     * instead, so headless Linux and macOS environments — most importantly CI —
+     * get a working OpenCV without needing a Windows binary.</p>
+     *
+     * <p>If the bundled Windows image cannot be loaded — the usual cause is a
+     * clone made without Git LFS, which leaves a ~130 byte pointer stub in place
+     * of the 52&nbsp;MB DLL — the openpnp Windows image is used as a fallback so
+     * the application still starts instead of dying during bootstrap.</p>
+     *
+     * <p>The call is idempotent and safe to invoke from several threads: the
+     * first successful load wins and subsequent invocations return immediately.</p>
+     *
+     * @throws IOException if no native image could be bound on this platform
+     */
+    public static void loadNativeLibrary() throws IOException {
+        if (nativeLoaded) {
+            return;
+        }
+        synchronized (nativeLoadLock) {
+            if (nativeLoaded) {
+                return;
+            }
+
+            if (isWindows()) {
+                try {
+                    extractAndLoadNative(WINDOWS_NATIVE_RESOURCE);
+                    nativeLoaded = true;
+                    return;
+                } catch (IOException | UnsatisfiedLinkError bundledImageFailure) {
+                    log.warn(tagged("Bundled Windows OpenCV image could not be loaded ("
+                            + bundledImageFailure.getMessage()
+                            + "). Falling back to the openpnp artifact. If this is a "
+                            + "source clone, run 'git lfs pull' to fetch the real DLL."));
+                }
+            }
+
+            // The openpnp OpenCV artifact ships images for Windows, Linux and
+            // macOS; let it pick the one matching this OS and CPU architecture.
+            try {
+                nu.pattern.OpenCV.loadLocally();
+            } catch (RuntimeException | UnsatisfiedLinkError openpnpFailure) {
+                throw new IOException("No OpenCV native image could be loaded for "
+                        + System.getProperty("os.name") + " / "
+                        + System.getProperty("os.arch"), openpnpFailure);
+            }
+            log.info(tagged("Loaded OpenCV native image for "
+                    + System.getProperty("os.name") + " from the openpnp artifact"));
+            nativeLoaded = true;
+        }
+    }
+
     /**
      * Extracts a bundled native library from the classpath into
      * {@code lib/opencv/} and loads it via {@link System#load}.
@@ -1859,6 +1935,9 @@ public class OpenCvPatternLocator {
      * avoiding an unnecessary ~50&nbsp;MB copy on every launch. The library is
      * written to a temporary file and atomically moved into place so a crash
      * mid-copy can never leave a truncated, unloadable binary behind.</p>
+     *
+     * <p>Prefer {@link #loadNativeLibrary()}, which selects the correct native
+     * image for the current operating system instead of assuming Windows.</p>
      */
     public static void extractAndLoadNative(String resourcePath) throws IOException {
         String[] segments = resourcePath.split("/");
@@ -1898,6 +1977,7 @@ public class OpenCvPatternLocator {
         }
 
         System.load(dest.toAbsolutePath().toString());
+        nativeLoaded = true;
         log.info(tagged("Native library loaded from: " + dest));
     }
 
