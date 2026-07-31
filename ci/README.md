@@ -196,7 +196,46 @@ The Git LFS pointer-stub guard shared with the nightly lives in
 Run the feature's tests locally:
 
 ```sh
-python3 ci/test_pr_build_plan.py     # planner, against real throwaway git repos
-python3 ci/test_pr_test_notify.py    # Discord result messages
-node discord-bot/test_worker.mjs     # worker helpers
+python3 ci/test_pr_build_plan.py       # planner, against real throwaway git repos
+python3 ci/test_pr_test_notify.py      # Discord result messages
+python3 ci/check_workflow_python.py    # inline `python3 -c` snippets in the workflows
+node discord-bot/test_worker.mjs       # worker helpers
 ```
+
+### Inline workflow Python is compile-checked
+
+The release notes are assembled by short `python3 -c '...'` snippets inside the
+`publish` job. Those snippets sit in **shell single quotes**, so a backslash
+escape such as `\"` is not consumed by the shell — it reaches Python verbatim
+and raises `SyntaxError: unexpected character after line continuation
+character`. That is a run-time failure: it surfaced only in `publish`, i.e.
+*after* a full Maven build had already succeeded, and the requester saw nothing
+but "Test build failed" in Discord.
+
+[`check_workflow_python.py`](check_workflow_python.py) extracts every inline
+snippet from `.github/workflows/*.yml` and `compile()`s it (it never executes
+anything). The `plan` job runs it alongside the planner tests, so the same typo
+now fails in seconds, before any runner time is spent.
+
+Because `.github/workflows/` can only be written by a credential holding the
+`workflows` permission, the fix lands in the staged copy under
+[`setup/github-workflows/`](../setup/github-workflows/) and reaches the live
+workflow when a maintainer runs:
+
+```sh
+bash setup/install-workflows.sh    # also compile-checks what it installed
+git add .github/workflows
+git commit -m "ci: install the PR test build fix"
+git push
+```
+
+Until that is done, `python3 ci/check_workflow_python.py` reports the installed
+copy as broken — that failure *is* the reminder that the staged fix has not been
+applied yet.
+
+Rules for these snippets, to keep them valid:
+
+- no single quotes — they would close the shell quoting;
+- no backslash escapes — use `"…{}".format(x["key"])` instead of an f-string
+  with `\"` inside it;
+- pass data as `sys.argv`, never by interpolating `${{ … }}` into the program.
