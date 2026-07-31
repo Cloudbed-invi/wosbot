@@ -161,3 +161,42 @@ substitution really took effect in both directions.
   python3 ci/verify_bundle.py fg-app/target/frostguard-*-desktop-bundle.zip
   ci/smoke_test_bundle.sh fg-app/target/frostguard-*-desktop-bundle.zip
   ```
+
+## Combined PR test builds (`/build-pr`)
+
+Testers can request a temporary Windows bundle that combines one or more
+**open** pull requests — including stacked PRs — without merging anything
+(issue #68). Two entry points exist:
+
+- **Actions tab** → *PR Test Build* → *Run workflow* with `prs: 47,48,49,65`.
+- **Discord** `/build-pr 47 48 49 65` via the Cloudflare Worker in
+  [`discord-bot/`](../discord-bot/README.md), which validates the request,
+  pins head SHAs, shows the plan and asks for confirmation before dispatching
+  the same workflow.
+
+The pipeline is [`pr-test-build.yml`](../setup/github-workflows/pr-test-build.yml)
+(staged under `setup/github-workflows/` until `setup/install-workflows.sh` copies
+it into `.github/workflows/`) with four jobs that enforce a strict trust split:
+
+| Job | Trust | What it does |
+|---|---|---|
+| `plan` | trusted | [`pr_build_plan.py plan`](pr_build_plan.py): rejects closed/merged/non-numeric PRs with reasons, pins every head SHA, drops PRs already contained in another requested head or in `main` (stacked PRs), orders base-to-tip, trial-merges on a detached HEAD and reports conflicting files (binary conflicts flagged). Never executes PR code. |
+| `build` | **untrusted** | `pr_build_plan.py merge` reproduces the planned merge and fails unless the tree is bit-identical to the planned one, then runs the full Maven build. Read-only token, **no secrets**. Its verification is advisory only. |
+| `publish` | trusted | Fresh runner, pristine `main`: re-verifies the bundle with the trusted `verify_bundle.py` + `smoke_test_bundle.sh`, re-checks (`pr_build_plan.py recheck`) that every PR is still open and unchanged, then publishes the `pr-test-<digest>` prerelease. The digest covers base SHA + ordered pinned heads, so identical requests reuse the existing release. |
+| `notify` | trusted | [`pr_test_notify.py`](pr_test_notify.py) posts the outcome to the existing `DISCORD_NIGHTLY_WEBHOOK_URL`: download link (marked **UNMERGED TEST BUILD**), conflict report, rejection reasons, staleness explanation, or failure link. |
+
+No job ever pushes to `main` or a PR branch; the merged tree exists only
+inside the runners. [`pr-test-cleanup.yml`](../setup/github-workflows/pr-test-cleanup.yml)
+deletes each test release after 7 days or once every included PR is closed,
+and never touches `nightly` or real releases.
+
+The Git LFS pointer-stub guard shared with the nightly lives in
+[`check_lfs_assets.sh`](check_lfs_assets.sh).
+
+Run the feature's tests locally:
+
+```sh
+python3 ci/test_pr_build_plan.py     # planner, against real throwaway git repos
+python3 ci/test_pr_test_notify.py    # Discord result messages
+node discord-bot/test_worker.mjs     # worker helpers
+```
