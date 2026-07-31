@@ -20,6 +20,11 @@
 #                                    shared ci/check_lfs_assets.sh instead of
 #                                    carrying its own inline copy (no
 #                                    behaviour change)
+#
+# Re-running this script is how a fix to a staged workflow reaches the live
+# .github/workflows copy. Until it is run, the installed workflow keeps its old
+# content — which is why the copies are compared below and why
+# ci/check_workflow_python.py scans both directories.
 
 set -euo pipefail
 
@@ -32,6 +37,15 @@ for file in pr-test-build.yml pr-test-cleanup.yml daily-windows-bundle.yml; do
   cp "${here}/github-workflows/${file}" "${target}/${file}"
   echo "installed .github/workflows/${file}"
 done
+
+# The workflows embed short `python3 -c '...'` programs. A syntax error in one
+# of them only surfaces when the job runs — for the publish job, that is after a
+# full Maven build — so the installed files are compile-checked right here.
+if [[ -x "${repo_root}/ci/check_workflow_python.py" ]] \
+  || [[ -f "${repo_root}/ci/check_workflow_python.py" ]]; then
+  echo
+  python3 "${repo_root}/ci/check_workflow_python.py" "${target}"
+fi
 
 echo
 echo "Now commit and push:"
