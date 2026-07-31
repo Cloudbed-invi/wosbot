@@ -9,7 +9,7 @@ No manual activation step is needed — the workflow is live as soon as it lands
 
 | Trigger | Purpose |
 |---|---|
-| `schedule` (03:17 UTC daily) | Publishes a nightly Windows bundle for testers |
+| `schedule` (03:17 UTC daily) | Publishes a nightly Windows bundle for testers, updates the `nightly` release and posts it to Discord |
 | `pull_request` | Guards `pom.xml`, `src/`, `tools/`, `custom_tasks/`, `ci/`, `fg-watcher.bat` and `.gitattributes` |
 | `push` to `ci/**` | Lets CI changes be iterated on a branch |
 | `workflow_dispatch` | On-demand build from the Actions tab |
@@ -42,6 +42,86 @@ No manual activation step is needed — the workflow is live as soon as it lands
    `Class-Path`, and boots the shaded Telegram watcher for real.
 8. Uploads the bundle (version-tagged, no re-compression) and the Surefire
    reports, and writes a job summary with size, JAR count and test count.
+9. Republishes the rolling **`nightly` prerelease** with the bundle attached, so
+   there is a public download URL that needs no GitHub login.
+10. Posts a **Discord notification** with that download link.
+
+## Discord notifications
+
+[`discord_notify.py`](discord_notify.py) posts one message per non-PR run to the
+webhook in the `DISCORD_NIGHTLY_WEBHOOK_URL` repository secret.
+
+### Why a release and not the Actions artifact
+
+An artifact download URL only resolves for a signed-in GitHub account with read
+access to the repository, so it is useless as a "downloadable link" in a Discord
+channel. The bundle is also ~220 MB, far above the 8 MiB a webhook may upload.
+The workflow therefore republishes the rolling `nightly` tag on every `main`
+build and links its asset at this permanent URL:
+
+```
+https://github.com/Shederator/wosbot/releases/download/nightly/frostguard-windows-desktop-bundle.zip
+```
+
+Three details keep that link from going stale or 404ing:
+
+- **The asset name carries no version.** A download URL contains the asset
+  filename, so uploading `frostguard-2.1.0-desktop-bundle.zip` would change the
+  link at the next version bump and break every message already in the channel.
+  The versioned ZIP is copied to a fixed name before upload; the version is
+  still reported in the release title, notes and Discord card.
+- **The release is deleted and recreated** (`--cleanup-tag`) rather than edited.
+  `gh release edit --target` does not move an existing tag, so editing in place
+  would leave `nightly` pinned to the first commit it was ever cut from while
+  the notes advertised a newer SHA.
+- **The URL is read back from the API** (`browser_download_url`) and then
+  actually fetched, instead of being predicted from the filename. A predicted
+  URL is precisely how a dead link reaches the channel. If the asset is missing
+  or does not serve a 200/206, the step fails before anything is posted.
+
+The tag is marked *prerelease*, so it never displaces a real tagged release as
+"Latest".
+
+### Setting the secret
+
+*Settings → Secrets and variables → Actions → New repository secret*
+
+| Field | Value |
+|---|---|
+| Name | `DISCORD_NIGHTLY_WEBHOOK_URL` |
+| Secret | the full `https://discord.com/api/webhooks/<id>/<token>` URL |
+
+To rotate it, edit the same secret — nothing else has to change. If the secret is
+absent the notify step logs a warning and the build still passes; a channel
+notification is not worth failing a good artifact over.
+
+### Behaviour worth knowing
+
+- **Failures notify too.** The step is `if: always()`, so a broken nightly shows
+  up as a red card instead of being silently absent — the failure mode a
+  success-only notifier hides.
+- **Pull requests never notify.** A PR from a fork gets a read-only token that
+  cannot read secrets, and republishing `nightly` from unmerged code would hand
+  testers an unreviewed build.
+- **`continue-on-error: true`** keeps a Discord outage from turning a good build
+  red. Delivery is retried on 429 (honouring `Retry-After`) and on 5xx.
+- **No mass pings.** `allowed_mentions: {parse: []}` is set structurally, so an
+  `@everyone` in a commit subject cannot ping the channel.
+- **The commit message is passed through the environment**, never interpolated
+  into the `run:` block, so `$(...)` in a commit subject cannot execute on the
+  runner while the webhook secret is in scope.
+- **The webhook is never printed.** Errors are redacted before logging, since
+  Actions logs are public on a public repository.
+- **A malformed download URL is dropped.** If the release step was skipped, the
+  card falls back to the run link rather than advertising a broken download.
+
+Test the payload without posting anything:
+
+```sh
+python3 ci/test_discord_notify.py     # 21 self-tests, no network
+python3 ci/discord_notify.py --status success --version 2.1.0 \
+  --download-url https://example.com/bundle.zip --dry-run
+```
 
 ## Why two verification layers
 
@@ -77,6 +157,7 @@ substitution really took effect in both directions.
   ```sh
   mvn clean install -Djavafx.platform=win
   python3 ci/test_verify_bundle.py
+  python3 ci/test_discord_notify.py
   python3 ci/verify_bundle.py fg-app/target/frostguard-*-desktop-bundle.zip
   ci/smoke_test_bundle.sh fg-app/target/frostguard-*-desktop-bundle.zip
   ```
