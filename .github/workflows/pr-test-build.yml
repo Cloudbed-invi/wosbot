@@ -96,6 +96,10 @@ jobs:
         run: |
           python3 ci/test_pr_build_plan.py
           python3 ci/test_pr_test_notify.py
+          # Compiles the inline `python3 -c` snippets used later in this
+          # workflow, so a typo in one fails here in seconds instead of in the
+          # publish job after a full Maven build.
+          python3 ci/check_workflow_python.py
 
       - name: Plan, pin and trial-merge the requested PRs
         id: plan
@@ -350,11 +354,14 @@ jobs:
           plan = json.load(open(sys.argv[1]))
           print(",".join(str(p["number"]) for p in plan["pulls"]))
           ' "${plan_json}")"
+          # The snippet is wrapped in shell single quotes, so it must contain
+          # neither single quotes nor backslash escapes: str.format keeps the
+          # dictionary lookups readable without either.
           pr_details="$(python3 -c '
           import json, sys
           plan = json.load(open(sys.argv[1]))
           for p in plan["pulls"]:
-              print(f"- #{p[\"number\"]} `{p[\"head_sha\"]}` {p[\"title\"]}")
+              print("- #{} `{}` {}".format(p["number"], p["head_sha"], p["title"]))
           ' "${plan_json}")"
           expires="$(date -u -d "+${EXPIRY_DAYS} days" '+%Y-%m-%d')"
 
