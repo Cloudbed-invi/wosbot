@@ -17,7 +17,7 @@ GITHUB_REPO = "Shederator/wosbot"
 GITHUB_DEFAULT_BRANCH = "main"
 # Discord application (client) ID from the Developer Portal.
 # Replace after creating the application.
-DISCORD_APPLICATION_ID = "REPLACE_WITH_APPLICATION_ID"
+DISCORD_APPLICATION_ID = "1532693190879215767"
 # Comma-separated Discord channel IDs where /build-pr is allowed.
 # Empty = every channel the command is visible in.
 ALLOWED_CHANNEL_IDS = ""
