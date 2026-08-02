@@ -278,14 +278,15 @@ jobs:
           echo "download_url=${url}" >> "${GITHUB_OUTPUT}"
           echo "Published and verified ${asset} at ${url} (HTTP ${code})"
 
-      # Runs even when the build failed, so a broken nightly is visible in the
-      # channel instead of being silently absent. `continue-on-error` keeps a
-      # Discord outage from turning a good build red.
-      - name: Notify Discord
-        if: always() && github.event_name != 'pull_request'
+      # Keep one maintained Daily message instead of adding one post per run.
+      # Failures remain visible in Actions and never overwrite the last working
+      # public download.
+      - name: Update the Daily Discord message
+        if: success() && github.event_name != 'pull_request'
         continue-on-error: true
         env:
           DISCORD_NIGHTLY_WEBHOOK_URL: ${{ secrets.DISCORD_NIGHTLY_WEBHOOK_URL }}
+          DISCORD_DAILY_MESSAGE_ID: ${{ vars.DISCORD_DAILY_MESSAGE_ID }}
           # A commit message is attacker-controlled text. Interpolating it
           # straight into the `run:` block would let `$(...)` or a backtick in a
           # commit subject execute on the runner, with the webhook secret in
@@ -325,4 +326,5 @@ jobs:
             --trigger "${GITHUB_EVENT_NAME}" \
             --commit "${GITHUB_SHA}" \
             --commit-message "${COMMIT_MESSAGE}" \
-            --actor "${GITHUB_ACTOR}"
+            --actor "${GITHUB_ACTOR}" \
+            --message-id "${DISCORD_DAILY_MESSAGE_ID}"
