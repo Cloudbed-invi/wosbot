@@ -443,7 +443,13 @@ request guidance.
 
 <div align="center">
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Shederator/wosbot&type=Date)](https://www.star-history.com/?type=date&repos=Shederator%2Fwosbot)
+<a href="https://www.star-history.com/?repos=Shederator%2Fwosbot&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Shederator/wosbot&type=date&theme=dark&legend=top-left&sealed_token=Q4rcyFr92ZWBzZQ20e-IzVUjxqfb5_eM5u09bqV8HyzPBtTvEvoQpkN-YO7JzMG8uRS50EcA9FGzM65sJJmceYHi43KwVqBIFrYbqa7ImNnjTUMFTGryFQ" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Shederator/wosbot&type=date&legend=top-left&sealed_token=Q4rcyFr92ZWBzZQ20e-IzVUjxqfb5_eM5u09bqV8HyzPBtTvEvoQpkN-YO7JzMG8uRS50EcA9FGzM65sJJmceYHi43KwVqBIFrYbqa7ImNnjTUMFTGryFQ" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Shederator/wosbot&type=date&legend=top-left&sealed_token=Q4rcyFr92ZWBzZQ20e-IzVUjxqfb5_eM5u09bqV8HyzPBtTvEvoQpkN-YO7JzMG8uRS50EcA9FGzM65sJJmceYHi43KwVqBIFrYbqa7ImNnjTUMFTGryFQ" />
+ </picture>
+</a>
 
 </div>
 
