@@ -57,8 +57,10 @@ double-click Start Frostguard.bat.
 ```
 
 The URL is deliberately version-independent. Do not post a new Discord message
-for every daily build. Build failures belong in a maintainer channel, not in
-`#downloads`.
+for every daily build. Store the webhook-owned message ID in the repository
+variable `DISCORD_DAILY_MESSAGE_ID`; successful builds edit that message.
+Build failures remain visible in Actions and do not replace the last working
+public download.
 
 ## Migration
 
