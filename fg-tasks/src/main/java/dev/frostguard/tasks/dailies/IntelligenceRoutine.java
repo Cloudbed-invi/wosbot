@@ -6,14 +6,13 @@ import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.api.domain.AreaData;
 import dev.frostguard.api.domain.ImageSearchResultData;
+import dev.frostguard.api.domain.MarchResourceType;
+import dev.frostguard.api.domain.MarchSlotState;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.TaskStateData;
 import dev.frostguard.api.domain.TesseractSettingsData;
-import dev.frostguard.data.entity.DailyTask;
-import dev.frostguard.data.repository.DailyTaskRepository;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.helper.DeploymentHelper;
-import dev.frostguard.engine.nav.CommonGameAreas;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
@@ -24,18 +23,13 @@ import dev.frostguard.engine.service.TaskManagementService;
 import dev.frostguard.vision.convert.GameTimeUtils;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
 import java.awt.Color;
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.function.Consumer;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import net.sourceforge.tess4j.TesseractException;
 
 public class IntelligenceRoutine extends DelayedTask {
 
@@ -60,19 +54,13 @@ private static final PointData MARCH_RECALL_CONFIRM_TOP_LEFT = new PointData(446
 private static final PointData MARCH_RECALL_CONFIRM_BOTTOM_RIGHT = new PointData(578, 800);
 
 private static final MarchQueueRegion[] MARCH_QUEUE_REGIONS = {
-		new MarchQueueRegion(new PointData(10, 342), new PointData(435, 407), new PointData(152, 378)),
-		new MarchQueueRegion(new PointData(10, 415), new PointData(435, 480), new PointData(152, 451)),
-		new MarchQueueRegion(new PointData(10, 488), new PointData(435, 553), new PointData(152, 524)),
-		new MarchQueueRegion(new PointData(10, 561), new PointData(435, 626), new PointData(152, 597)),
-		new MarchQueueRegion(new PointData(10, 634), new PointData(435, 699), new PointData(152, 670)),
-		new MarchQueueRegion(new PointData(10, 707), new PointData(435, 772), new PointData(152, 743)),
+		new MarchQueueRegion(new PointData(10, 342), new PointData(435, 407)),
+		new MarchQueueRegion(new PointData(10, 415), new PointData(435, 480)),
+		new MarchQueueRegion(new PointData(10, 488), new PointData(435, 553)),
+		new MarchQueueRegion(new PointData(10, 561), new PointData(435, 626)),
+		new MarchQueueRegion(new PointData(10, 634), new PointData(435, 699)),
+		new MarchQueueRegion(new PointData(10, 707), new PointData(435, 772)),
 };
-
-private static final int MARCH_QUEUE_TIME_TEXT_WIDTH = 140;
-
-private static final int MARCH_QUEUE_TIME_TEXT_HEIGHT = 19;
-
-private final DailyTaskRepository iDailyTaskRepository = DailyTaskRepository.getRepository();
 
 private boolean marchQueueLimitReached;
 
@@ -118,6 +106,8 @@ private boolean shouldRequeueAutoJoinAfterIntel;
 // Changed by pernerch | Date: 2026-07-02 | Why: track beast march dispatch to keep intel rescheduling accurate.
 private boolean beastMarchSent;
 
+private final List<LocalDateTime> intelBeastReturnTimes = new ArrayList<>();
+
 private TaskStateData autoJoinTask;
 
 private ResilientOcrExecutor<LocalDateTime> textHelper;
@@ -135,6 +125,7 @@ public IntelligenceRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
 
 @Override
 	protected void execute() {
+		intelBeastReturnTimes.clear();
 
 
 		hydrateConfiguration();
@@ -311,29 +302,6 @@ private boolean hasAnyIntelMissionAvailableFlow() {
 		return true;
 	}
 
-private enum GatherTypeShape {
-		MEAT("meat", TemplatesEnum.GAME_HOME_SHORTCUTS_MEAT),
-		WOOD("wood", TemplatesEnum.GAME_HOME_SHORTCUTS_WOOD),
-		COAL("coal", TemplatesEnum.GAME_HOME_SHORTCUTS_COAL),
-		IRON("iron", TemplatesEnum.GAME_HOME_SHORTCUTS_IRON);
-
-		final String name;
-		final TemplatesEnum template;
-
-		GatherTypeShape(String name, TemplatesEnum enumTemplate) {
-			this.name = name;
-			this.template = enumTemplate;
-		}
-
-		public String getName() {
-			return name;
-		}
-
-		public TemplatesEnum getTemplate() {
-			return template;
-		}
-	}
-
 public record MarchesAvailable(boolean available, LocalDateTime rescheduleTo) {
 	}
 
@@ -411,80 +379,32 @@ private boolean seekAndProcessGrayscale(TemplatesEnum template, Consumer<ImageSe
 	}
 
 private MarchesAvailable resolveMarchesAvailable() {
-
-
-		marchHelper.openLeftMenuCitySection(false);
-
-		TesseractSettingsData ocrPreset = TesseractSettingsData.assembler()
-				.charWhitelist("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-				.recognitionEngine(TesseractSettingsData.RecognitionEngine.LSTM_ONLY)
-				.build();
-
-
-		try {
-			for (int i = 0; i < 5; i++) {
-				String ocrSearchResult = emuManager.readText(EMULATOR_NUMBER,
-						new PointData(10, 342),
-						new PointData(435, 772),
-						ocrPreset);
-				Pattern idleMarchesPattern = Pattern.compile("idle");
-				Matcher m = idleMarchesPattern.matcher(ocrSearchResult.toLowerCase());
-				if (m.find()) {
-					logInfo(routineLogIntelligenceLine("Idle marches detected via OCR"));
-					return new MarchesAvailable(true, null);
-				} else {
-					logDebug(routineLogIntelligenceLine("Zero idle marches detected via OCR (Attempt " + (i + 1) + "/5)."));
-				}
-			}
-		} catch (IOException | TesseractException e) {
-			logDebug(routineLogIntelligenceLine("OCR attempt did not complete: " + e.getMessage()));
+		List<MarchSlotState> slots = marchHelper.readMarchQueue();
+		IntelMarchAvailabilityPolicy.Decision decision = IntelMarchAvailabilityPolicy.assess(slots);
+		if (slots.isEmpty()) {
+			logWarning(routineLogIntelligenceLine(
+					"March queue could not be read. Treating capacity as occupied and retrying in 5 minutes."));
+			return new MarchesAvailable(false, LocalDateTime.now().plus(decision.retryDelay()));
 		}
 
-		logInfo(routineLogIntelligenceLine("Zero idle marches detected via OCR. Analyzing gather march queues..."));
-
-
-		int totalMarchesAvailable = profile.getConfig(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT,
-				Integer.class);
-		int activeMarchQueues = 0;
-		LocalDateTime earliestAvailableMarch = LocalDateTime.now().plusHours(14);
-
-
-		for (GatherTypeShape gatherType : GatherTypeShape.values()) {
-			ImageSearchResultData resource = templateSearchHelper.locatePattern(gatherType.getTemplate(), SearchConfigConstants.SINGLE_WITH_RETRIES);
-			if (!resource.isFound()) {
-				logDebug(routineLogIntelligenceLine("March queue for " + gatherType.getName() + " is not active. (Used: " +
-						activeMarchQueues + "/" + totalMarchesAvailable + ")"));
-				continue;
-			}
-
-
-			activeMarchQueues++;
-			logInfo(routineLogIntelligenceLine("March queue for " + gatherType.getName() + " detected. (Used: " +
-					activeMarchQueues + "/" + totalMarchesAvailable + ")"));
-
-
-			DailyTask gatherTask = iDailyTaskRepository
-					.findByAccountIdAndTaskType(profile.getId(), TpDailyTaskEnum.GATHER_RESOURCES);
-
-			if (gatherTask != null && gatherTask.getScheduledAt() != null) {
-				LocalDateTime nextSchedule = gatherTask.getScheduledAt();
-
-				if (nextSchedule.isBefore(earliestAvailableMarch)) {
-					earliestAvailableMarch = nextSchedule;
-					logInfo(routineLogIntelligenceLine("Updated earliest available march: " + earliestAvailableMarch));
-				}
-			}
+		if (decision.available()) {
+			logInfo(routineLogIntelligenceLine(
+					"Shared March Queue reader found " + decision.idleCount() + " idle slot(s)."));
+			return new MarchesAvailable(true, null);
 		}
 
-		if (activeMarchQueues >= totalMarchesAvailable) {
-			logInfo(routineLogIntelligenceLine("All march queues used. Earliest available march: " + earliestAvailableMarch));
-			return new MarchesAvailable(false, earliestAvailableMarch);
+		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime retryAt = now.plus(decision.retryDelay());
+		if (decision.exactRelease()) {
+			logInfo(routineLogIntelligenceLine(
+					"No idle slots. Earliest exact returning-march release: " + retryAt));
+			return new MarchesAvailable(false, retryAt);
 		}
 
-
-		logInfo(routineLogIntelligenceLine("Not all march queues used (" + activeMarchQueues + "/" + totalMarchesAvailable +
-				"), but no idle marches. Suspected auto-rally marches. Planning next run in 5 minutes."));
-		return new MarchesAvailable(false, LocalDateTime.now().plusMinutes(5));
+		logInfo(routineLogIntelligenceLine(
+				"No idle slot or exact release countdown. Retrying in 5 minutes; lower-bound attack, rally, "
+						+ "and gather timers are not treated as slot-free times."));
+		return new MarchesAvailable(false, retryAt);
 	}
 
 private void redeemCompletedMissions() {
@@ -687,7 +607,7 @@ private void recallGatherTroopsFlow() {
 					tapped++;
 				}
 			} else if (marchView != null && marchView.isFound() || marchSpeedup != null && marchSpeedup.isFound()) {
-				List<GatherMarchCandidate> visibleRows = collectVisibleGatherRowsForRecallFlow(searchConfig);
+				List<GatherMarchCandidate> visibleRows = collectVisibleGatherRowsForRecallFlow();
 				for (GatherMarchCandidate row : visibleRows) {
 					if (tapGatherRowThenRecallFlow(row, searchConfig)) {
 						tapped++;
@@ -732,43 +652,13 @@ private boolean tapGatherRowThenRecallFlow(GatherMarchCandidate candidate, Searc
 		return true;
 	}
 
-private List<GatherMarchCandidate> collectVisibleGatherRowsForRecallFlow(SearchConfig searchConfig) {
-		List<GatherMarchCandidate> rows = new ArrayList<>();
-		Map<String, GatherMarchCandidate> uniqueRows = new LinkedHashMap<>();
-
-		for (GatherTypeShape gatherType : GatherTypeShape.values()) {
-			List<ImageSearchResultData> detections = locateAllPatternsWithMonoFallback(
-					gatherType.getTemplate(),
-					SearchConfig.builder()
-							.withArea(new AreaData(MARCH_QUEUE_REGIONS[0].topLeft(), MARCH_QUEUE_REGIONS[MARCH_QUEUE_REGIONS.length - 1].bottomRight()))
-							.withThreshold(searchConfig.getThreshold())
-							.withMaxAttempts(searchConfig.getMaxAttempts())
-							.withDelay(searchConfig.getDelayBetweenAttempts())
-							.withMaxResults(MARCH_QUEUE_REGIONS.length)
-							.build());
-
-			for (ImageSearchResultData detection : detections) {
-				if (detection == null || !detection.isFound()) {
-					continue;
-				}
-
-				int queueIndex = findQueueIndexByPointFlow(detection.getPoint());
-				if (queueIndex < 0) {
-					continue;
-				}
-
-				String key = detection.getPoint().getX() + ":" + detection.getPoint().getY();
-				uniqueRows.putIfAbsent(key, new GatherMarchCandidate(
-						gatherType,
-						queueIndex,
-						readGatherReturnTimeFlow(queueIndex),
-						detection.getPoint()));
-			}
-		}
-
-		rows.addAll(uniqueRows.values());
-		rows.sort(Comparator.comparing(GatherMarchCandidate::returnAt).reversed());
-		return rows;
+private List<GatherMarchCandidate> collectVisibleGatherRowsForRecallFlow() {
+		return marchHelper.readVisibleMarchQueue().stream()
+				.filter(MarchSlotState::isGather)
+				.map(this::gatherCandidateFromSlot)
+				.filter(java.util.Objects::nonNull)
+				.sorted(Comparator.comparing(GatherMarchCandidate::returnAt).reversed())
+				.toList();
 	}
 
 	private ImageSearchResultData locatePatternWithMonoFallback(TemplatesEnum template, SearchConfig searchConfig) {
@@ -812,33 +702,12 @@ private int recallDuplicateGatherMarchesForSmartProcessingFlow() {
 private GatherMarchCandidate findLongestDuplicateGatherMarchFlow() {
 		marchHelper.openLeftMenuCitySection(false);
 		try {
-			Map<GatherTypeShape, List<GatherMarchCandidate>> groupedByType = new HashMap<>();
-
-			for (GatherTypeShape gatherType : GatherTypeShape.values()) {
-				List<ImageSearchResultData> detections = templateSearchHelper.locateAllPatterns(
-						gatherType.getTemplate(),
-						SearchConfig.builder()
-								.withArea(new AreaData(MARCH_QUEUE_REGIONS[0].topLeft(), MARCH_QUEUE_REGIONS[MARCH_QUEUE_REGIONS.length - 1].bottomRight()))
-								.withMaxAttempts(3)
-								.withDelay(3)
-								.withMaxResults(MARCH_QUEUE_REGIONS.length)
-								.build());
-
-				for (ImageSearchResultData detection : detections) {
-					int queueIndex = findQueueIndexByPointFlow(detection.getPoint());
-					if (queueIndex < 0) {
-						continue;
-					}
-
-					LocalDateTime returnAt = readGatherReturnTimeFlow(queueIndex);
-					if (returnAt == null) {
-						returnAt = LocalDateTime.now().plusMinutes(5);
-					}
-
-					groupedByType.computeIfAbsent(gatherType, key -> new ArrayList<>())
-							.add(new GatherMarchCandidate(gatherType, queueIndex, returnAt, detection.getPoint()));
-				}
-			}
+			Map<MarchResourceType, List<GatherMarchCandidate>> groupedByType = marchHelper.readVisibleMarchQueue()
+					.stream()
+					.filter(MarchSlotState::isGather)
+					.map(this::gatherCandidateFromSlot)
+					.filter(java.util.Objects::nonNull)
+					.collect(java.util.stream.Collectors.groupingBy(GatherMarchCandidate::type));
 
 			List<GatherMarchCandidate> duplicates = new ArrayList<>();
 			for (List<GatherMarchCandidate> candidates : groupedByType.values()) {
@@ -857,7 +726,8 @@ private GatherMarchCandidate findLongestDuplicateGatherMarchFlow() {
 					.orElse(null);
 
 			if (selected != null) {
-				logInfo(routineLogIntelligenceLine("Smart processing selected duplicate " + selected.type().getName()
+				logInfo(routineLogIntelligenceLine("Smart processing selected duplicate "
+						+ selected.type().name().toLowerCase()
 						+ " gather march on queue #" + (selected.queueIndex() + 1)
 						+ " with longest return time for recall."));
 			}
@@ -904,63 +774,34 @@ private boolean recallGatherMarchByQueueFlow(int queueIndex) {
 	}
 
 private int countIdleMarchesFlow() {
-		marchHelper.openLeftMenuCitySection(false);
-		int idleCount = 0;
-
-		try {
-			for (int i = 0; i < CommonGameAreas.MARCH_SLOTS_TOP_LEFT.length; i++) {
-				PointData topLeft = CommonGameAreas.MARCH_SLOTS_TOP_LEFT[i];
-				PointData bottomRight = CommonGameAreas.MARCH_SLOTS_BOTTOM_RIGHT[i];
-				String text = emuManager.readText(EMULATOR_NUMBER, topLeft, bottomRight);
-				if (text != null && text.toLowerCase().contains("idle")) {
-					idleCount++;
-				}
-			}
-		} catch (IOException | TesseractException e) {
-			logDebug(routineLogIntelligenceLine("Could not read idle march slots: " + e.getMessage()));
-		} finally {
-			marchHelper.closeLeftMenu();
+		List<MarchSlotState> slots = marchHelper.readMarchQueue();
+		if (slots.isEmpty()) {
+			logWarning(routineLogIntelligenceLine("Could not classify march slots while counting idle capacity."));
+			return 0;
 		}
+		return (int) slots.stream().filter(MarchSlotState::isIdle).count();
+}
 
-		return idleCount;
-	}
-
-private int findQueueIndexByPointFlow(PointData point) {
-		for (int i = 0; i < MARCH_QUEUE_REGIONS.length; i++) {
-			MarchQueueRegion region = MARCH_QUEUE_REGIONS[i];
-			if (point.getX() >= region.topLeft().getX() && point.getX() <= region.bottomRight().getX()
-					&& point.getY() >= region.topLeft().getY() && point.getY() <= region.bottomRight().getY()) {
-				return i;
-			}
+private GatherMarchCandidate gatherCandidateFromSlot(MarchSlotState slot) {
+		int queueIndex = slot.slot() - 1;
+		MarchResourceType resource = slot.resourceType();
+		if (queueIndex < 0 || queueIndex >= MARCH_QUEUE_REGIONS.length
+				|| resource == null || resource == MarchResourceType.UNKNOWN) {
+			return null;
 		}
-		return -1;
+		MarchQueueRegion row = MARCH_QUEUE_REGIONS[queueIndex];
+		PointData rowPoint = new PointData(
+				(row.topLeft().getX() + row.bottomRight().getX()) / 2,
+				(row.topLeft().getY() + row.bottomRight().getY()) / 2);
+		LocalDateTime returnEstimate = LocalDateTime.now().plus(
+				slot.countdown() == null ? java.time.Duration.ofMinutes(5) : slot.countdown());
+		return new GatherMarchCandidate(resource, queueIndex, returnEstimate, rowPoint);
 	}
 
-private LocalDateTime readGatherReturnTimeFlow(int queueIndex) {
-		MarchQueueRegion region = MARCH_QUEUE_REGIONS[queueIndex];
-		TesseractSettingsData settings = TesseractSettingsData.assembler()
-				.pageAnalysis(TesseractSettingsData.PageAnalysis.SINGLE_LINE)
-				.recognitionEngine(TesseractSettingsData.RecognitionEngine.LSTM_ONLY)
-				.stripBackground(true)
-				.setTextColor(new Color(255, 255, 255))
-				.charWhitelist("0123456789:")
-				.build();
-
-		return textHelper.attemptRecognition(
-				region.timeTextStart(),
-				new PointData(region.timeTextStart().getX() + MARCH_QUEUE_TIME_TEXT_WIDTH,
-						region.timeTextStart().getY() + MARCH_QUEUE_TIME_TEXT_HEIGHT),
-				3,
-				200L,
-				settings,
-				GameTimeUtils::isAcceptedFormat,
-				text -> LocalDateTime.now().plus(GameTimeUtils.parseDuration(text)));
+private record MarchQueueRegion(PointData topLeft, PointData bottomRight) {
 	}
 
-private record MarchQueueRegion(PointData topLeft, PointData bottomRight, PointData timeTextStart) {
-	}
-
-private record GatherMarchCandidate(GatherTypeShape type, int queueIndex, LocalDateTime returnAt, PointData rowPoint) {
+private record GatherMarchCandidate(MarchResourceType type, int queueIndex, LocalDateTime returnAt, PointData rowPoint) {
 	}
 
 private void hydrateConfiguration() {
@@ -1032,13 +873,9 @@ private void manageRescheduling(boolean anyIntelProcessed, boolean nonBeastIntel
 	}
 
 	private LocalDateTime resolveMarchReturnWaitTimeFlow(MarchesAvailable marchesAvailable) {
-		if (marchesAvailable != null && marchesAvailable.rescheduleTo() != null
-				&& marchesAvailable.rescheduleTo().isAfter(LocalDateTime.now())) {
-			return marchesAvailable.rescheduleTo();
-		}
-
-		// Fallback when no reliable return timestamp is available from OCR/menu state.
-		return LocalDateTime.now().plusMinutes(5);
+		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime queueRelease = marchesAvailable == null ? null : marchesAvailable.rescheduleTo();
+		return IntelMarchAvailabilityPolicy.resolveNextRelease(now, queueRelease, intelBeastReturnTimes);
 	}
 
 	private void initializeIntelMarchCountersFlow() {
@@ -1349,7 +1186,8 @@ private void handleBeast(ImageSearchResultData beast) {
 		}
 
 		if (useSmartProcessing) {
-			LocalDateTime rescheduleTime = LocalDateTime.now().plusSeconds(travelTimeSeconds);
+			LocalDateTime rescheduleTime = LocalDateTime.now().plusSeconds(travelTimeSeconds * 2);
+			intelBeastReturnTimes.add(rescheduleTime);
 			logInfo(routineLogIntelligenceLine("Smart Intel beast march return ETA: "
 					+ GameTimeUtils.formatCountdown(rescheduleTime)
 					+ ". Continuing loop to use remaining available marches."));
