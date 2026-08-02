@@ -45,6 +45,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           lfs: true
 
       # The Windows OpenCV .dll, adb.exe and the .traineddata OCR models are all
@@ -239,7 +240,18 @@ jobs:
           # leave the `nightly` tag pinned to the first commit it was ever cut
           # from while the notes claimed a newer SHA. --cleanup-tag removes the
           # tag too, so the recreated one points at this build.
+          previous_sha=""
           if gh release view nightly >/dev/null 2>&1; then
+            previous_sha="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/releases/tags/nightly" \
+              --jq '.target_commitish')"
+          fi
+          changes="$(python3 ci/nightly_changes.py \
+            --repository "${GITHUB_REPOSITORY}" \
+            --previous "${previous_sha}" \
+            --current "${GITHUB_SHA}")"
+
+          if [[ -n "${previous_sha}" ]]; then
             gh release delete nightly --yes --cleanup-tag
           fi
 
@@ -279,6 +291,11 @@ jobs:
           fi
 
           echo "download_url=${url}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "changes<<FROSTGUARD_CHANGES"
+            printf '%s\n' "${changes}"
+            echo "FROSTGUARD_CHANGES"
+          } >> "${GITHUB_OUTPUT}"
           echo "Published and verified ${asset} at ${url} (HTTP ${code})"
 
       # Keep one maintained Daily message instead of adding one post per run.
@@ -301,6 +318,7 @@ jobs:
           JAR_COUNT: ${{ steps.metrics.outputs.jar_count }}
           TEST_COUNT: ${{ steps.metrics.outputs.test_count }}
           DOWNLOAD_URL: ${{ steps.release.outputs.download_url }}
+          NIGHTLY_CHANGES: ${{ steps.release.outputs.changes }}
           VERSION: ${{ steps.version.outputs.version }}
         shell: bash
         run: |
@@ -330,4 +348,5 @@ jobs:
             --commit "${GITHUB_SHA}" \
             --commit-message "${COMMIT_MESSAGE}" \
             --actor "${GITHUB_ACTOR}" \
+            --changes "${NIGHTLY_CHANGES}" \
             --message-id "${DISCORD_DAILY_MESSAGE_ID}"
