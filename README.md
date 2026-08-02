@@ -443,7 +443,7 @@ request guidance.
 
 <div align="center">
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Shederator/wosbot&type=Date)](https://star-history.com/#Shederator/wosbot&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Shederator/wosbot&type=Date)](https://www.star-history.com/?type=date&repos=Shederator%2Fwosbot)
 
 </div>
 
