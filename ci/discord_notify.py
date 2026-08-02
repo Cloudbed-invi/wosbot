@@ -213,7 +213,7 @@ def retry_after_seconds(error: urllib.error.HTTPError, body: str) -> float:
 
 
 def post(webhook: str, body: bytes, content_type: str, timeout: float,
-         method: str = "POST") -> None:
+         method: str = "POST") -> bytes:
     """Send a webhook request with retries for rate limits and transient errors."""
     last_error = "no attempt was made"
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -228,8 +228,9 @@ def post(webhook: str, body: bytes, content_type: str, timeout: float,
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
+                response_body = response.read()
                 print(f"Discord accepted the notification (HTTP {response.status}).")
-                return
+                return response_body
         except urllib.error.HTTPError as error:
             detail = ""
             try:
@@ -311,6 +312,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="edit this existing webhook message instead of creating a new one",
     )
     parser.add_argument(
+        "--message-id-output",
+        default="",
+        help="write the ID of a newly created message to this GitHub output file",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="print the payload instead of posting it",
@@ -371,8 +377,23 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         destination = f"{webhook.rstrip('/')}/messages/{args.message_id}"
         method = "PATCH"
+    elif args.message_id_output:
+        # Discord only returns the created message when wait=true is requested.
+        separator = "&" if "?" in webhook else "?"
+        destination = f"{webhook}{separator}wait=true"
 
-    post(destination, body, content_type, args.timeout, method=method)
+    response_body = post(destination, body, content_type, args.timeout, method=method)
+    if args.message_id_output:
+        try:
+            message_id = str(json.loads(response_body).get("id", ""))
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            message_id = ""
+        if not message_id.isdigit():
+            print("::error::Discord did not return a valid created message ID.")
+            return 1
+        with open(args.message_id_output, "a", encoding="utf-8") as output:
+            output.write(f"message_id={message_id}\n")
+        print(f"Created maintained Discord message {message_id}.")
     return 0
 
 
