@@ -183,7 +183,7 @@ public ManualRallyJoinRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask)
                 }
 
 
-                long travelTimeSeconds = staminaHelper.parseTravelTime();
+                long travelTimeSeconds = deploymentHelper.readTravelTimeSeconds();
                 LocalDateTime returnTime;
                 if (travelTimeSeconds > 0) {
 

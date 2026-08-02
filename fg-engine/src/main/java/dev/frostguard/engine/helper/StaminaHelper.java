@@ -13,7 +13,6 @@ import dev.frostguard.vision.convert.RegexNumberParser;
 import dev.frostguard.vision.logging.ProfileContextLogger;
 import dev.frostguard.vision.ocr.ResilientOcrExecutor;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 
 // Orchestrates stamina tracking: OCR reads, regen delay computation,
@@ -23,7 +22,6 @@ public class StaminaHelper {
     private final EmulatorController device;
     private final String deviceSlot;
     private final ResilientOcrExecutor<Integer> numberReader;
-    private final ResilientOcrExecutor<Duration> durationReader;
     private final StaminaService persistence;
     private final Long accountKey;
     private final ProfileContextLogger trace;
@@ -34,12 +32,10 @@ public class StaminaHelper {
 
     public StaminaHelper(EmulatorController emuManager, String emulatorNumber,
                          ResilientOcrExecutor<Integer> integerHelper,
-                         ResilientOcrExecutor<Duration> durationHelper,
                          AccountDescriptor profile, MarchHelper marchHelper) {
         this.device = emuManager;
         this.deviceSlot = emulatorNumber;
         this.numberReader = integerHelper;
-        this.durationReader = durationHelper;
         this.persistence = StaminaService.getServices();
         this.accountKey = profile.getId();
         this.trace = new ProfileContextLogger(StaminaHelper.class, profile);
@@ -109,35 +105,6 @@ public class StaminaHelper {
                 emitDebug("Press-back cleanup error: " + ex.getMessage());
             }
         }
-    }
-
-    // Reads stamina cost from the deployment confirmation screen.
-    // Changed by pernerch | Date: 2026-07-02 | Why: reduce OCR attempts (3 instead of 5) to match deployment screen speed expectations.
-    public Integer getSpentStamina() {
-        Integer cost = numberReader.attemptRecognition(
-                CommonGameAreas.SPENT_STAMINA_OCR_AREA.topLeft(),
-                CommonGameAreas.SPENT_STAMINA_OCR_AREA.bottomRight(),
-                3, 100L,
-                CommonOCRSettings.SPENT_STAMINA_SETTINGS,
-                txt -> RegexNumberParser.conformsTo(txt, CommonOCRSettings.NUMBER_PATTERN),
-                txt -> RegexNumberParser.extractByPattern(txt, CommonOCRSettings.NUMBER_PATTERN));
-
-        emitDebug(cost != null ? "Deployment cost: " + cost : "Deployment cost OCR failed");
-        return cost;
-    }
-
-    // The deploy screen prints the real cost, which stamina-reducing heroes lower below the action's
-    // maximum. An unreadable or out-of-range value falls back to that maximum: over-deducting only
-    // wastes a scheduling cycle, while trusting a too-low misread would over-deploy.
-    // The read only succeeds while the cost is white; a red cost means it is unaffordable anyway.
-    public int readDeployCost(int maxPlausible) {
-        Integer cost = getSpentStamina();
-        if (cost == null || cost < 1 || cost > maxPlausible) {
-            emitWarn("Deploy cost " + (cost == null ? "unreadable" : cost)
-                    + " is out of range [1.." + maxPlausible + "]; assuming " + maxPlausible);
-            return maxPlausible;
-        }
-        return cost;
     }
 
     /**
@@ -307,26 +274,6 @@ public class StaminaHelper {
         }
 
         return true;
-    }
-
-    // Reads travel-time from the deployment screen; returns seconds or 0 on failure.
-    // Changed by pernerch | Date: 2026-07-02 | Why: reduce OCR delay to 100ms to prevent deployment screen hangs.
-    public long parseTravelTime() {
-        Duration parsed = durationReader.attemptRecognition(
-                CommonGameAreas.TRAVEL_TIME_OCR_AREA.topLeft(),
-                CommonGameAreas.TRAVEL_TIME_OCR_AREA.bottomRight(),
-                3, 100L,
-                CommonOCRSettings.TRAVEL_TIME_SETTINGS,
-                GameTimeUtils::isAcceptedFormat,
-                GameTimeUtils::parseDuration);
-
-        if (parsed == null) {
-            emitWarn("Travel time OCR failed");
-            return 0;
-        }
-        long seconds = parsed.getSeconds();
-        emitDebug("Travel estimate: " + seconds + "s");
-        return seconds;
     }
 
     // ── logging shortcuts ────────────────────────────────────────────

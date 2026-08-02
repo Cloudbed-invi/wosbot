@@ -12,6 +12,7 @@ import dev.frostguard.api.domain.TesseractSettingsData;
 import dev.frostguard.data.entity.DailyTask;
 import dev.frostguard.data.repository.DailyTaskRepository;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
+import dev.frostguard.engine.helper.DeploymentHelper;
 import dev.frostguard.engine.nav.CommonGameAreas;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
@@ -1266,18 +1267,21 @@ private void handleBeast(ImageSearchResultData beast) {
 		}
 
 
-		ImageSearchResultData equalizeButton = templateSearchHelper.locatePattern(TemplatesEnum.RALLY_EQUALIZE_BUTTON,
-				SearchConfigConstants.SINGLE_WITH_RETRIES);
-		if (equalizeButton.isFound()) {
-			tapPoint(equalizeButton.getPoint());
+		if (deploymentHelper.tapEqualize()) {
 			sleepTask(300);
 		}
 
-
-		long travelTimeSeconds = staminaHelper.parseTravelTime();
-
-
-		Integer spentStamina = staminaHelper.getSpentStamina();
+		var deployment = deploymentHelper.readScreen(DeploymentHelper.MAX_ATTACK_STAMINA_COST);
+		long travelTimeSeconds = deployment.travelTimeSeconds();
+		int spentStamina = deployment.staminaCost();
+		if (deploymentHelper.hasNoDeployableTroops() || deploymentHelper.isDeployCostRed()) {
+			logWarning(routineLogIntelligenceLine(
+					"Deployment blocked by troops or stamina. No march was sent or deducted; retrying in 5 minutes."));
+			pressBack();
+			reschedule(LocalDateTime.now().plusMinutes(5));
+			processingTask = false;
+			return;
+		}
 
 
 		ImageSearchResultData deploy = templateSearchHelper.locatePattern(TemplatesEnum.DEPLOY_BUTTON, SearchConfigConstants.SINGLE_WITH_RETRIES);
@@ -1302,6 +1306,15 @@ private void handleBeast(ImageSearchResultData beast) {
 			sleepTask(300);
 		}
 
+		if (deploymentHelper.isSameTargetDialog()) {
+			logInfo(routineLogIntelligenceLine(
+					"Another march is already targeting this beast. Cancelling deployment without stamina deduction."));
+			pressBack();
+			pressBack();
+			reschedule(LocalDateTime.now().plusMinutes(1));
+			processingTask = false;
+			return;
+		}
 
 		deploy = templateSearchHelper.locatePattern(TemplatesEnum.DEPLOY_BUTTON, SearchConfigConstants.SINGLE_WITH_RETRIES);
 		if (deploy.isFound()) {

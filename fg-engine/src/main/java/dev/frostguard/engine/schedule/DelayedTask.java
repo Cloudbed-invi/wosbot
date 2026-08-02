@@ -132,9 +132,10 @@ public abstract class DelayedTask implements Runnable, Delayed, StaminaWaitSched
         this.templateSearchHelper.setPreemptionCheck(this::checkPreemption);
         this.navigationHelper = new NavigationHelper(emuManager, EMULATOR_NUMBER, profile);
         this.marchHelper = new MarchHelper(emuManager, EMULATOR_NUMBER, stringHelper, profile);
-        this.deploymentHelper = new DeploymentHelper(emuManager, EMULATOR_NUMBER, templateSearchHelper, profile);
+        this.deploymentHelper = new DeploymentHelper(emuManager, EMULATOR_NUMBER, templateSearchHelper,
+                integerHelper, durationHelper, profile);
         this.staminaHelper = new StaminaHelper(emuManager, EMULATOR_NUMBER, integerHelper,
-                durationHelper, profile, marchHelper);
+                profile, marchHelper);
         this.intelScreenHelper = new IntelScreenHelper(emuManager, EMULATOR_NUMBER,
                 templateSearchHelper, navigationHelper, profile);
         this.allianceHelper = new AllianceHelper(emuManager, EMULATOR_NUMBER,

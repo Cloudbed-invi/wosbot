@@ -21,6 +21,7 @@ import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.helper.NavigationHelper.EventMenu;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
+import dev.frostguard.engine.helper.DeploymentHelper;
 
 import java.awt.Color;
 
@@ -176,11 +177,15 @@ public class HeroMissionEventRoutine extends DelayedTask {
             marchHelper.selectFlag(flagNumber);
         }
 
-        // Parse travel time
-        long travelTimeSeconds = staminaHelper.parseTravelTime();
-
-        // Parse stamina cost
-        Integer spentStamina = staminaHelper.getSpentStamina();
+        var deployment = deploymentHelper.readScreen(DeploymentHelper.MAX_RALLY_STAMINA_COST);
+        long travelTimeSeconds = deployment.travelTimeSeconds();
+        int spentStamina = deployment.staminaCost();
+        if (deploymentHelper.hasNoDeployableTroops() || deploymentHelper.isDeployCostRed()) {
+            logWarning("Deployment blocked by troops or stamina. No rally was sent or deducted.");
+            pressBack();
+            reschedule(LocalDateTime.now().plusMinutes(5));
+            return false;
+        }
 
         // Deploy march
         ImageSearchResultData deploy = templateSearchHelper.locatePattern(
@@ -197,6 +202,14 @@ public class HeroMissionEventRoutine extends DelayedTask {
 
         tapPoint(deploy.getPoint());
         sleepTask(2000);
+
+        if (deploymentHelper.isSameTargetDialog()) {
+            logInfo("Another march is already targeting this Reaper. Cancelling deployment.");
+            pressBack();
+            pressBack();
+            reschedule(LocalDateTime.now().plusMinutes(1));
+            return false;
+        }
 
         deploy = templateSearchHelper.locatePattern(
                 TemplatesEnum.DEPLOY_BUTTON,
